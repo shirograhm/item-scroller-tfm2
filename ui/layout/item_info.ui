@@ -1,0 +1,343 @@
+item_info:item_info_ui {
+  width: 1600px;
+  height: 968px;
+
+  x: 32px;
+  y: 24px;
+
+  #data:empty {
+    width: 1600px;
+    height: 100%;
+
+    #sub_tabs:color {
+      x: 0px;
+      width: 1008px;
+      height: 39px;
+
+      padding: {
+        left: 4px;
+        right: 4px;
+        top: 4px;
+        bottom: 4px;
+      }
+
+      color: #4a4c56ff;
+      stroke: 1;
+      back_color: #00000000;
+
+      child_type: LeftToRight {
+        spacing: 0px;
+      }
+
+      rounding: Uniform {
+        rounding: 8;
+      }
+
+      #champion_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.champion";
+      }
+
+      #item_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.item";
+      }
+
+      #object_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.object";
+      }
+
+      #game_rules_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.game_rules";
+      }
+
+      #patch_history_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.patch_history";
+      }
+    }
+
+    #item_list_bg:color {
+      width: 1045px;
+      height: 916px;
+      y: 52px;
+
+      color: #161721ff;
+      rounding: Uniform {
+        rounding: 12;
+      }
+    }
+
+    #item_list:scroll_view {
+      width: 1043px;
+      height: 916px;
+      y: 52px;
+
+      speed: 100;
+      bar_width: 4;
+      bar_padding: {
+        top: 14px;
+        bottom: 14px;
+      }
+      bar: {
+        source: "asset/base/sprite/white";
+        color: #37d5b3ff;
+
+        hover: {
+        color: #ecfbf8ff;
+        }
+      }
+
+      back: {
+        source: "asset/base/sprite/white";
+        color: #4a4c56ff;
+      }
+
+      #contents:empty {
+        x: 20px;
+        y: 12px;
+        width: 1002px;
+        height: auto;
+
+        child_type: Table {
+          spacing_x: 8px;
+          spacing_y: 8px;
+        }
+      }
+    }
+
+    #item_detail_bg:color {
+      width: 540px;
+      height: 916px;
+      x: 1060px;
+      y: 52px;
+
+      color: #161721ff;
+      rounding: Uniform {
+        rounding: 12;
+      }
+    }
+
+    #item_detail:empty {
+      width: 540px;
+      height: 916px;
+      x: 1060px;
+      y: 52px;
+
+      #icon_slot:color {
+        x: 20px;
+        y: 20px;
+        width: 60px;
+        height: 60px;
+
+        color: #1d1f2cff;
+
+        #icon:image {
+          width: 40px;
+          height: 40px;
+
+          anchor_x: 0.5;
+          pivot_x: 0.5;
+          anchor_y: 0.5;
+          pivot_y: 0.5;
+        }
+      }
+
+      #name:label {
+        @"asset/base/style/main#label";
+        x: 92px;
+        y: 20px;
+        width: 350px;
+        height: 30px;
+
+        align_y: Center;
+        size: 24;
+        bold: true;
+        color: #e8e8e8ff;
+        text: "";
+      }
+
+      #tier:label {
+        @"asset/base/style/main#label";
+        x: -20px;
+        y: 20px;
+        width: 80px;
+        height: 30px;
+
+        anchor_x: 1;
+        pivot_x: 1;
+
+        align_x: Right;
+        align_y: Center;
+        size: 20;
+        color: #667085ff;
+        text: "";
+      }
+
+      #price_area:empty {
+        x: 92px;
+        y: 50px;
+        width: 200px;
+        height: 30px;
+
+        child_type: LeftToRight {
+          spacing: 4px;
+        }
+
+        #gold_icon:image {
+          width: 18px;
+          height: 18px;
+
+          anchor_y: 0.5;
+          pivot_y: 0.5;
+
+          source: "asset/base/ui/icons/gold";
+          color: #fde99fff;
+        }
+
+        #price:label {
+          @"asset/base/style/main#label";
+          width: 150px;
+          height: 30px;
+
+          align_y: Center;
+          size: 18;
+          color: #fde99fff;
+          text: "";
+        }
+      }
+
+      #desc:label {
+        @"asset/base/style/main#label";
+        x: 20px;
+        y: 100px;
+        width: 500px;
+        height: auto;
+
+        size: 16;
+        line_height: 24;
+        color: #e8e8e8ff;
+        text: "";
+      }
+
+      #sub_items_section:empty {
+        x: 20px;
+        y: 320px;
+        width: 500px;
+        height: auto;
+
+        visible: false;
+
+        #header:label {
+          @"asset/base/style/main#label";
+          width: 500px;
+          height: 23px;
+
+          size: 20;
+          align_y: Center;
+          color: #e8e8e8ff;
+          text: "#asset/base/text/item?related.sub_items";
+        }
+
+        #slots:empty {
+          y: 27px;
+          width: 500px;
+          height: auto;
+
+          child_type: Table {
+            spacing_x: 10px;
+            spacing_y: 8px;
+          }
+        }
+      }
+
+      #upper_items_section:empty {
+        x: 20px;
+        y: 440px;
+        width: 500px;
+        height: auto;
+
+        visible: false;
+
+        #header:label {
+          @"asset/base/style/main#label";
+          width: 500px;
+          height: 23px;
+
+          size: 20;
+          align_y: Center;
+          color: #e8e8e8ff;
+          text: "#asset/base/text/item?related.upper_items";
+        }
+
+        #slots:empty {
+          y: 27px;
+          width: 500px;
+          height: auto;
+
+          child_type: Table {
+            spacing_x: 10px;
+            spacing_y: 8px;
+          }
+        }
+      }
+    }
+  }
+}
