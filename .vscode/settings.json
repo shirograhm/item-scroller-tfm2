@@ -1,0 +1,45 @@
+{
+    "cSpell.words": [
+        "banpick",
+        "blackfire",
+        "bloodthirster",
+        "cooltime",
+        "deathblade",
+        "deathcap",
+        "defence",
+        "greatsword",
+        "guinsoo",
+        "guinsoos",
+        "hexplate",
+        "icathian",
+        "ironsword",
+        "jaksho",
+        "kindlegem",
+        "lifesteal",
+        "longsword",
+        "luden",
+        "ludens",
+        "mult",
+        "nashor",
+        "nashors",
+        "omnivamp",
+        "protoplasm",
+        "rabadon",
+        "rabadons",
+        "rageblade",
+        "regen",
+        "riftmaker",
+        "stormblade",
+        "thornmail",
+        "thunderclaw",
+        "warmog"
+    ],
+    "cSpell.useGitignore": true,
+    "rust-analyzer.server.path": null,
+    "rust-analyzer.cargo.extraEnv": {
+        "RUSTUP_TOOLCHAIN": "nightly-2026-06-11"
+        // If you change this, you will also have to run 
+        // 'rustup override set nightly-2026-06-11'
+        // but with the nightly version used in the release
+    }
+}

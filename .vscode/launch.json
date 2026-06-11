@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "PowerShell: Launch Script",
+            "type": "PowerShell",
+            "request": "launch",
+            "cwd": "${workspaceFolder}\\..\\mod-sdk-0.4.12",
+            "script": "${workspaceFolder}\\..\\mod-sdk-0.4.12\\build_mod_cargo.ps1",
+            "args": [
+                "-Project",
+                "..\\item_scroller_tfm2",
+                "-SdkDir",
+                "."
+            ]
+        }
+    ]
+}
