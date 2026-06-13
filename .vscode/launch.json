@@ -5,11 +5,11 @@
             "name": "PowerShell: Launch Script",
             "type": "PowerShell",
             "request": "launch",
-            "cwd": "${workspaceFolder}\\..\\mod-sdk-0.4.12",
-            "script": "${workspaceFolder}\\..\\mod-sdk-0.4.12\\build_mod_cargo.ps1",
+            "cwd": "C:\\Users\\xavie\\Documents\\Personal\\Teamfight Manager 2\\SDKs\\mod-sdk-0.4.12\\",
+            "script": "C:\\Users\\xavie\\Documents\\Personal\\Teamfight Manager 2\\SDKs\\mod-sdk-0.4.12\\build_mod_cargo.ps1",
             "args": [
                 "-Project",
-                "..\\item_scroller_tfm2",
+                "..\\..\\Mods\\item_scroller_tfm2",
                 "-SdkDir",
                 "."
             ]

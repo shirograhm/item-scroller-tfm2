@@ -1,9 +1,9 @@
 [build]
 rustflags = [
     "-L",
-    "C:/Users/xavie/Documents/Personal/Github/RiotItemsTFM2/mod-sdk-0.4.12/deps/",
+    "C:\\Users\\xavie\\Documents\\Personal\\Teamfight Manager 2\\SDKs\\mod-sdk-0.4.12\\deps",
     "--extern",
-    "mod_api=C:/Users/xavie/Documents/Personal/Github/RiotItemsTFM2/mod-sdk-0.4.12/deps/libmod_api-0a24296d2b45e79d.rlib",
+    "mod_api=C:\\Users\\xavie\\Documents\\Personal\\Teamfight Manager 2\\SDKs\\mod-sdk-0.4.12\\deps\\libmod_api-0a24296d2b45e79d.rlib",
     "--extern",
-    "arrayvec=C:/Users/xavie/Documents/Personal/Github/RiotItemsTFM2/mod-sdk-0.4.12/deps/libarrayvec-56035a3e5d09ef15.rlib",
+    "arrayvec=C:\\Users\\xavie\\Documents\\Personal\\Teamfight Manager 2\\SDKs\\mod-sdk-0.4.12\\deps\\libarrayvec-56035a3e5d09ef15.rlib",
 ]
