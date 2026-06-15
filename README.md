@@ -1,2 +1,2 @@
-# Item Scroller TFM2
+# Item Scroller
 Adds item info page scrolling functionality to Teamfight Manager 2.
