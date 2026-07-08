@@ -272,7 +272,7 @@ item_info:item_info_ui {
         height: auto;
 
         size: 16;
-        line_height: 24;
+        line_height: 20;
         color: #e8e8e8ff;
         text: "";
       }
@@ -303,7 +303,7 @@ item_info:item_info_ui {
 
           child_type: Table {
             spacing_x: 10px;
-            spacing_y: 8px;
+            spacing_y: 4px;
           }
         }
       }
@@ -334,7 +334,7 @@ item_info:item_info_ui {
 
           child_type: Table {
             spacing_x: 10px;
-            spacing_y: 8px;
+            spacing_y: 4px;
           }
         }
       }
