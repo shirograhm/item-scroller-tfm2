@@ -1,0 +1,1314 @@
+champion_info:champion_info_ui {
+  width: 1600px;
+  height: 968px;
+
+  x: 32px;
+  y: 24px;
+
+  #data:empty {
+    width: 1600px;
+    height: 100%;
+
+    #sub_tabs:color {
+      x: 0px;
+      width: 1008px;
+      height: 39px;
+
+      padding: {
+        left: 4px;
+        right: 4px;
+        top: 4px;
+        bottom: 4px;
+      }
+
+      color: #4a4c56ff;
+      stroke: 1;
+      back_color: #00000000;
+
+      child_type: LeftToRight {
+        spacing: 0px;
+      }
+
+      rounding: Uniform {
+        rounding: 8;
+      }
+
+      #champion_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.champion";
+      }
+
+      #item_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.item";
+      }
+
+      #object_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.object";
+      }
+
+      #game_rules_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.game_rules";
+      }
+
+      #patch_history_tab:color_selectable {
+        @"asset/base/style/main#strategy_option";
+        width: 200px;
+        height: 32px;
+
+        label: {
+          size: 18;
+        }
+
+        selected_label: {
+          size: 18;
+        }
+
+        text: "#asset/base/text/ui?main.game_info_tab.patch_history";
+      }
+    }
+
+    #champion_category:dropdown {
+      @"asset/base/style/main#dropdown";
+      x: 1088px;
+      width: 200px;
+      height: 40px;
+
+      text: {
+        size: 18;
+      }
+
+      item_text: {
+        size: 18;
+      }
+
+      text_layout: {
+        x: 14px;
+        y: 6px;
+        width: 100%;
+        height: 28px;
+      }
+
+      item_layout: {
+        height: 40px;
+        width: 195.5px;
+        x: 14px;
+      }
+
+      item_text_layout: {
+        y: 6px;
+        width: 195.5px;
+        height: 28px;
+      }
+    }
+
+    #champion_search:text_edit {
+      @"asset/base/style/main#text_edit";
+      x: 1300px;
+      width: 248px;
+      height: 40px;
+
+      size: 16;
+      align_y: Center;
+
+      padding: {
+        left: 44px;
+        top: 5px;
+        right: 15px;
+        bottom: 5px;
+      }
+
+      placeholder: "#asset/base/text/ui?banpick.champion_search_placeholder";
+      max_length: 40;
+
+      #icon:image {
+        ignore_event: true;
+        x: -30px;
+        y: 5px;
+        width: 20px;
+        height: 20px;
+
+        source: "asset/base/ui/banpick/fi-rr-search";
+        color: #858d9dff;
+      }
+    }
+
+    #champion_search_clear:color_icon_button {
+      @"asset/base/style/main#tertiary_button";
+      x: 1560px;
+      width: 40px;
+      height: 40px;
+
+      icon: {
+        source: "asset/base/ui/icons/cross";
+        rect: {
+          x: 12;
+          y: 12;
+          w: 16;
+          h: 16;
+        }
+      }
+    }
+
+    #champions_bg:color {
+      width: 1600px;
+      height: 476px;
+      y: 52px;
+
+      color: #161721ff;
+      rounding: Uniform {
+        rounding: 12;
+      }
+    }
+
+    #champions:scroll_view {
+      width: 1600px;
+      height: 476px;
+      y: 52px;
+
+      speed: 100;
+      bar_width: 4;
+      bar_padding: {
+        top: 14px;
+        bottom: 14px;
+      }
+      bar: {
+        source: "asset/base/sprite/white";
+        color: #37d5b3ff;
+
+        hover: {
+        color: #ecfbf8ff;
+        }
+      }
+
+      back: {
+        source: "asset/base/sprite/white";
+        color: #4a4c56ff;
+      }
+
+      #contents:empty {
+        x: 20px;
+        y: 20px;
+        width: 1560px;
+        height: auto;
+        
+        child_type: Table {
+          spacing_x: 12px;
+          spacing_y: 12px;
+        }
+      }
+    }
+
+    #popup_container:empty {
+      width: 1600px;
+      height: 968px;
+    }
+
+    #action_buttons:empty {
+      width: 1600px;
+      height: 40px;
+      y: 540px;
+
+      #delegate_btn:color_icon_button {
+        @"asset/base/style/main#tertiary_button";
+        width: 440px;
+        height: 40px;
+
+        x: 0px;
+        y: 0px;
+        text: {
+          text: "#asset/base/text/ui?main.champion_info.delegate_tier";
+          size: 16;
+          align_x: Center;
+          align_y: Center;
+        }
+      }
+
+      #reset_btn:color_icon_button {
+        @"asset/base/style/main#tertiary_button";
+        width: 320px;
+        height: 40px;
+
+        x: 455px;
+        y: 0px;
+        text: {
+          text: "#asset/base/text/ui?main.champion_info.reset_tier";
+          size: 16;
+          align_x: Center;
+          align_y: Center;
+        }
+      }
+
+      #value_mode:color {
+        anchor_x: 1;
+        pivot_x: 1;
+        x: 0px;
+        width: 400px;
+        height: 40px;
+
+        padding: {
+          left: 4px;
+          right: 4px;
+          top: 4px;
+          bottom: 4px;
+        }
+
+        color: #4a4c56ff;
+        stroke: 1;
+        back_color: #00000000;
+
+        child_type: LeftToRight {
+          spacing: 0px;
+        }
+
+        rounding: Uniform {
+          rounding: 8;
+        }
+
+        #current_btn:color_selectable {
+          @"asset/base/style/main#strategy_option";
+          width: 196px;
+          height: 32px;
+
+          label: {
+            size: 16;
+          }
+
+          selected_label: {
+            size: 16;
+          }
+
+          text: "#asset/base/text/ui?main.champion_info.current_value";
+        }
+
+        #initial_btn:color_selectable {
+          @"asset/base/style/main#strategy_option";
+          width: 196px;
+          height: 32px;
+
+          label: {
+            size: 16;
+          }
+
+          selected_label: {
+            size: 16;
+          }
+
+          text: "#asset/base/text/ui?main.champion_info.initial_value";
+        }
+      }
+    }
+
+    #champion_info:empty {
+      width: 1600px;
+      height: 375px;
+
+      y: 593px;
+
+
+      #stat:color {
+        color: #161721ff;
+        rounding: Uniform {
+          rounding: 12;
+        }
+
+        width: 838px;
+        height: 375px;
+
+        #header:color {
+          color: #0f1016ff;
+
+          rounding: Individual {
+            top_left: 12;
+            top_right: 12;
+            bottom_left: 0;
+            bottom_right: 0;
+          }
+          width: 838px;
+          height: 37px;
+        }
+
+        #name:label {
+          @"asset/base/style/main#label";
+          x: 0px;
+          height: 37px;
+          width: 838px;
+
+          align_x: Center;
+          align_y: Center;
+
+          size: 24;
+
+          color: #e8e8e8ff;
+          text: "";
+        }
+
+        #category:label {
+          @"asset/base/style/main#label";
+          x: 697px;
+          width: 131px;
+          height: 37px;
+
+          align_x: Right;
+          align_y: Center;
+
+          size: 18;
+
+          color: #e8e8e8ff;
+          text: "";
+        }
+      }
+
+      #stats:empty {
+        width: 818px;
+        height: 318px;
+
+        x: 10px;
+        y: 47px;
+
+        child_type: Table {
+          spacing_x: 20px;
+          spacing_y: 10px;
+        }
+
+        #attack:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform {
+            rounding: 8;
+          }
+
+          child_type: TopToBottom {
+            spacing: 0px;
+          }
+
+          #header:color {
+            width: 399px;
+            height: 26px;
+            color: #0f1016ff;
+            rounding: Individual {
+              top_left: 8;
+              top_right: 8;
+              bottom_left: 0;
+              bottom_right: 0;
+            }
+
+            #icon:image {
+              y: 5px;
+              width: 16px;
+              height: 16px;
+
+              source: "asset/base/ui/banpick/champion_stat_icon";
+              rect_tag: "ad_0";
+            }
+
+            #desc:label {
+              @"asset/base/style/main#label";
+              width: 399px;
+              height: 26px;
+
+              size: 16;
+
+              color: #e8e8e8ff;
+
+              align_x: Center;
+              align_y: Center;
+
+              text: "#asset/base/text/champion?stat.attack";
+            }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5;
+            pivot_x: 0.5;
+            width: 397px;
+            height: 23px;
+
+            child_type: LeftToRight {
+              spacing: 0px;
+            }
+
+            #lv1:label {
+              @"asset/base/style/main#label";
+              width: 133px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "Lv.1";
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #lvup:label {
+              @"asset/base/style/main#label";
+              width: 132px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "Lv+";
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #lvmax:label {
+              @"asset/base/style/main#label";
+              width: 132px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "Lv.12";
+              align_x: Center;
+              align_y: Center;
+            }
+          }
+
+          #bar:color {
+            width: 399px;
+            height: 1px;
+            color: #4a4c56ff;
+          }
+
+          #values:empty {
+            anchor_x: 0.5;
+            pivot_x: 0.5;
+            width: 397px;
+            height: 23px;
+
+            child_type: LeftToRight {
+              spacing: 0px;
+            }
+
+            #lv1:label {
+              @"asset/base/style/main#label";
+              width: 133px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "0";
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #lvup:label {
+              @"asset/base/style/main#label";
+              width: 132px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "0";
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #lvmax:label {
+              @"asset/base/style/main#label";
+              width: 132px;
+              height: 23px;
+              size: 16;
+              y: 1px;
+
+              text: "0";
+              align_x: Center;
+              align_y: Center;
+            }
+          }
+        }
+
+        #magic:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform {
+            rounding: 8;
+          }
+
+          child_type: TopToBottom {
+            spacing: 0px;
+          }
+
+          #header:color {
+            width: 399px;
+            height: 26px;
+            color: #0f1016ff;
+            rounding: Individual {
+              top_left: 8;
+              top_right: 8;
+              bottom_left: 0;
+              bottom_right: 0;
+            }
+
+            #icon:image {
+              y: 5px;
+              width: 16px;
+              height: 16px;
+
+              source: "asset/base/ui/banpick/champion_stat_icon";
+              rect_tag: "ap_0";
+            }
+
+            #desc:label {
+              @"asset/base/style/main#label";
+              width: 399px;
+              height: 26px;
+
+              size: 16;
+              color: #e8e8e8ff;
+              align_x: Center;
+              align_y: Center;
+
+              text: "#asset/base/text/champion?stat.ability_power";
+            }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5;
+            pivot_x: 0.5;
+            width: 397px;
+            height: 23px;
+
+            child_type: LeftToRight {
+              spacing: 0px;
+            }
+
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5;
+            pivot_x: 0.5;
+            width: 397px;
+            height: 23px;
+
+            child_type: LeftToRight {
+              spacing: 0px;
+            }
+
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #attack_speed:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "attack_speed_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.attack_speed"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #hp:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "hp_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.hp"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #defense:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "armor_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.defence"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #magic_resistance:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "magic resistance_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.magic_resistance"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #range:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "range_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.range"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+
+        #move_speed:color {
+          width: 399px;
+          height: 72px;
+
+          color: #1d1f2cff;
+          rounding: Uniform { rounding: 8; }
+          child_type: TopToBottom { spacing: 0px; }
+
+          #header:color {
+            width: 399px; height: 26px; color: #0f1016ff;
+            rounding: Individual { top_left: 8; top_right: 8; bottom_left: 0; bottom_right: 0; }
+            #icon:image { y: 5px; width: 16px; height: 16px; source: "asset/base/ui/banpick/champion_stat_icon"; rect_tag: "speed_0"; }
+            #desc:label { @"asset/base/style/main#label"; width: 399px; height: 26px; size: 16; color: #e8e8e8ff; align_x: Center; align_y: Center; text: "#asset/base/text/champion?stat.move_speed"; }
+          }
+
+          #lvs:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "Lv.1"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv+"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "Lv.12"; align_x: Center; align_y: Center; }
+          }
+
+          #bar:color { width: 399px; height: 1px; color: #4a4c56ff; }
+
+          #values:empty {
+            anchor_x: 0.5; pivot_x: 0.5; width: 397px; height: 23px;
+            child_type: LeftToRight { spacing: 0px; }
+            #lv1:label { @"asset/base/style/main#label"; width: 133px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvup:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+            #lvmax:label { @"asset/base/style/main#label"; width: 132px; height: 23px; size: 16; y: 1px; text: "0"; align_x: Center; align_y: Center; }
+          }
+        }
+      }
+
+      #skill1:color {
+        width: 747px;
+        height: 115px;
+        x: 853px;
+
+        color: #161721ff;
+        rounding: Uniform {
+          rounding: 12;
+        }
+
+        padding: {
+          left: 10px;
+          right: 10px;
+          top: 10px;
+          bottom: 10px;
+        }
+
+        #data:scroll_view {
+          width: 727px;
+          height: 95px;
+
+          speed: 60;
+          bar_width: 4;
+          bar_padding: {
+            top: 2px;
+            bottom: 2px;
+          }
+          bar: {
+            source: "asset/base/sprite/white";
+            color: #37d5b3ff;
+
+            hover: {
+            color: #ecfbf8ff;
+            }
+          }
+
+          back: {
+            source: "asset/base/sprite/white";
+            color: #4a4c56ff;
+          }
+
+          #desc:label {
+            @"asset/base/style/main#label";
+            x: 103px;
+
+            width: 608px;
+            height: 400px;
+
+            align_x: Left;
+            align_y: Top;
+            fit_height: true;
+
+            size: 16;
+            line_height: 22.4;
+
+            text: "test test test lorem ipsum test";
+          }
+
+          #icon_slot:empty {
+            width: 83px;
+            height: 95px;
+
+            #icon_bg:color {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+              color: #1d1f2cff;
+              width: 40px;
+              height: 40px;
+            }
+
+            #icon:image {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              width: 40px;
+              height: 40px;
+            }
+
+            #text:label {
+              @"asset/base/style/main#bold_label";
+
+              width: 83px;
+              height: 17px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 50px;
+
+              text: "Lv.1";
+              size: 18;
+
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #cooltime:empty {
+              width: 83px;
+              height: 36px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 66px;
+
+              #icon:image {
+                width: 12px;
+                height: 12px;
+
+                source: "asset/base/ui/banpick/banpick_UI_icons";
+                rect_tag: "cooltime_0";
+
+                anchor_x: 0.5;
+                pivot_x: 1;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: -2px;
+              }
+
+              #text:label {
+                @"asset/base/style/main#label";
+                width: 70px;
+                height: 30px;
+
+                anchor_x: 0.5;
+                pivot_x: 0;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: 2px;
+
+                size: 16;
+
+                color: #e8e8e8ff;
+                fit_width: true;
+
+                align_x: Left;
+                align_y: Center;
+                text: "#asset/base/text/champion?stat.cooltime";
+              }
+            }
+          }
+
+          #bar:color {
+            color: #4a4c56ff;
+            width: 1px;
+            x: 93px;
+            height: 95px;
+          }
+
+        }
+      }
+
+      #skill2:color {
+        width: 747px;
+        height: 115px;
+        x: 853px;
+        y: 130px;
+
+        color: #161721ff;
+        rounding: Uniform {
+          rounding: 12;
+        }
+
+        padding: {
+          left: 10px;
+          right: 10px;
+          top: 10px;
+          bottom: 10px;
+        }
+
+        #data:scroll_view {
+          width: 727px;
+          height: 95px;
+
+          speed: 60;
+          bar_width: 4;
+          bar_padding: {
+            top: 2px;
+            bottom: 2px;
+          }
+          bar: {
+            source: "asset/base/sprite/white";
+            color: #37d5b3ff;
+
+            hover: {
+            color: #ecfbf8ff;
+            }
+          }
+
+          back: {
+            source: "asset/base/sprite/white";
+            color: #4a4c56ff;
+          }
+
+          #desc:label {
+            @"asset/base/style/main#label";
+            x: 103px;
+
+            width: 608px;
+            height: 400px;
+
+            align_x: Left;
+            align_y: Top;
+            fit_height: true;
+
+            size: 16;
+            line_height: 22.4;
+
+            text: "test test test lorem ipsum test";
+          }
+
+          #icon_slot:empty {
+            width: 83px;
+            height: 95px;
+
+            #icon_bg:color {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+              color: #1d1f2cff;
+              width: 40px;
+              height: 40px;
+            }
+
+            #icon:image {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              width: 40px;
+              height: 40px;
+            }
+
+            #text:label {
+              @"asset/base/style/main#bold_label";
+
+              width: 83px;
+              height: 17px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 50px;
+
+              text: "Lv.3";
+              size: 18;
+
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #cooltime:empty {
+              width: 83px;
+              height: 36px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 66px;
+
+              #icon:image {
+                width: 12px;
+                height: 12px;
+
+                source: "asset/base/ui/banpick/banpick_UI_icons";
+                rect_tag: "cooltime_0";
+
+                anchor_x: 0.5;
+                pivot_x: 1;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: -2px;
+              }
+
+              #text:label {
+                @"asset/base/style/main#label";
+                width: 70px;
+                height: 30px;
+
+                anchor_x: 0.5;
+                pivot_x: 0;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: 2px;
+
+                size: 16;
+
+                color: #e8e8e8ff;
+                fit_width: true;
+
+                align_x: Left;
+                align_y: Center;
+                text: "#asset/base/text/champion?stat.cooltime";
+              }
+            }
+          }
+
+          #bar:color {
+            color: #4a4c56ff;
+            width: 1px;
+            x: 93px;
+            height: 95px;
+          }
+
+        }
+      }
+
+      #ult:color {
+        width: 747px;
+        height: 115px;
+        x: 853px;
+        y: 260px;
+
+        color: #161721ff;
+        rounding: Uniform {
+          rounding: 12;
+        }
+
+        padding: {
+          left: 10px;
+          right: 10px;
+          top: 10px;
+          bottom: 10px;
+        }
+
+        #data:scroll_view {
+          width: 727px;
+          height: 95px;
+
+          speed: 60;
+          bar_width: 4;
+          bar_padding: {
+            top: 2px;
+            bottom: 2px;
+          }
+          bar: {
+            source: "asset/base/sprite/white";
+            color: #37d5b3ff;
+
+            hover: {
+            color: #ecfbf8ff;
+            }
+          }
+
+          back: {
+            source: "asset/base/sprite/white";
+            color: #4a4c56ff;
+          }
+
+          #desc:label {
+            @"asset/base/style/main#label";
+            x: 103px;
+
+            width: 608px;
+            height: 400px;
+
+            align_x: Left;
+            align_y: Top;
+            fit_height: true;
+
+            size: 16;
+            line_height: 22.4;
+
+            text: "test test test lorem ipsum test";
+          }
+
+          #icon_slot:empty {
+            width: 83px;
+            height: 95px;
+
+            #icon_bg:color {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+              color: #1d1f2cff;
+              width: 40px;
+              height: 40px;
+            }
+
+            #icon:image {
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              width: 40px;
+              height: 40px;
+            }
+
+            #text:label {
+              @"asset/base/style/main#bold_label";
+
+              width: 83px;
+              height: 17px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 50px;
+
+              text: "Lv.5";
+              size: 18;
+
+              align_x: Center;
+              align_y: Center;
+            }
+
+            #cooltime:empty {
+              width: 83px;
+              height: 36px;
+
+              anchor_x: 0.5;
+              pivot_x: 0.5;
+
+              y: 66px;
+
+              #icon:image {
+                width: 12px;
+                height: 12px;
+
+                source: "asset/base/ui/banpick/banpick_UI_icons";
+                rect_tag: "cooltime_0";
+
+                anchor_x: 0.5;
+                pivot_x: 1;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: -2px;
+              }
+
+              #text:label {
+                @"asset/base/style/main#label";
+                width: 70px;
+                height: 30px;
+
+                anchor_x: 0.5;
+                pivot_x: 0;
+                anchor_y: 0.5;
+                pivot_y: 0.5;
+                x: 2px;
+
+                size: 16;
+
+                color: #e8e8e8ff;
+                fit_width: true;
+
+                align_x: Left;
+                align_y: Center;
+                text: "#asset/base/text/champion?stat.cooltime";
+              }
+            }
+          }
+
+          #bar:color {
+            color: #4a4c56ff;
+            width: 1px;
+            x: 93px;
+            height: 95px;
+          }
+
+        }
+      }
+    }
+  }
+}

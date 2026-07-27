@@ -2,5 +2,9 @@
   "asset/base/ui/layout/item_info": {
     "remapping": "asset/better_ui_tfm2/ui/layout/item_info",
     "type": "override"
+  },
+  "asset/base/ui/layout/champion_info": {
+    "remapping": "asset/better_ui_tfm2/ui/layout/champion_info",
+    "type": "override"
   }
 }
