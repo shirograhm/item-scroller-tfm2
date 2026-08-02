@@ -279,7 +279,7 @@ item_info:item_info_ui {
 
       #sub_items_section:empty {
         x: 20px;
-        y: 320px;
+        y: 410px;
         width: 500px;
         height: auto;
 
@@ -318,6 +318,7 @@ item_info:item_info_ui {
 
         #header:label {
           @"asset/base/style/main#label";
+          y: 110px;
           width: 500px;
           height: 23px;
 
@@ -328,7 +329,7 @@ item_info:item_info_ui {
         }
 
         #slots:empty {
-          y: 27px;
+          y: 137px;
           width: 500px;
           height: auto;
 
