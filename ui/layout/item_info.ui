@@ -279,7 +279,7 @@ item_info:item_info_ui {
 
       #sub_items_section:empty {
         x: 20px;
-        y: 420px;
+        y: 410px;
         width: 500px;
         height: auto;
 
