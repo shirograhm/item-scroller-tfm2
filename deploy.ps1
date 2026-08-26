@@ -20,12 +20,15 @@ $repo = $PSScriptRoot
 $modId = Split-Path -Leaf $repo
 
 # --- what gets deployed -----------------------------------------------------
-# mod.workshop_id is deliberately absent: it is for the uploader, not the game.
+# mod.workshop_id is for the uploader rather than the game, but it ships anyway:
+# it is what ties an upload to the already-published item, so a deployed copy
+# without it would publish a duplicate Workshop entry instead of updating ours.
 # previews/, README.md and WORKSHOP.md are Workshop listing material - the game
 # never reads them, and the videos in previews/ are large.
 $Include = @(
     "mod.mod_info",
     "mod.override_info",
+    "mod.workshop_id",
     "LICENSE",
     "$modId.dll",
     "preview.png",

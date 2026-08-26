@@ -13,6 +13,14 @@
 //! empty, so the control is a `color_selectable` header over a panel of
 //! `color_selectable` rows, styled with the game's own `main#strategy_option`.
 //!
+//! That style paints nothing until hovered (`image` is `#00000000` on both fill
+//! and stroke), so at rest the header read as bare text rather than a control.
+//! It therefore overrides its resting `image` with `main#dropdown`'s frame and
+//! carries the game's own chevron sprite, flipped to `dropdown_up` while the
+//! panel is open. The caret is an `image` child with `ignore_event: true` - the
+//! idiom `database_edit_component/number_list_row` uses for the icon inside its
+//! own selectable - so it cannot swallow clicks meant for the header beneath.
+//!
 //! # Graying rather than hiding
 //!
 //! Non-matching slots are disabled, not hidden: the grid is a `child_type:
@@ -58,6 +66,7 @@ const SLOT_ICON: &str = "icon";
 
 const ROOT_NODE: &str = "item_filter";
 const HEAD_NODE: &str = "head";
+const CARET_NODE: &str = "caret";
 const PANEL_NODE: &str = "panel";
 
 const MAX_DEPTH: usize = 16;
@@ -67,6 +76,11 @@ const SEARCH_INTERVAL_FRAMES: u32 = 30;
 const APP_ID: &str = "3009300";
 /// Convention filename for a code mod that ships its item stats as data.
 const MOD_ITEM_CONFIG: &str = "config-default.json";
+
+/// The game's own dropdown chevron and its flipped twin. Both sprites are
+/// 8.78x5.06, so swapping one for the other never moves or resizes the caret.
+const CARET_DOWN: &str = "source: \"asset/base/ui/icons/dropdown\";";
+const CARET_UP: &str = "source: \"asset/base/ui/icons/dropdown_up\";";
 
 const DIM_SLOT: &str = "disable: true;";
 const LIT_SLOT: &str = "disable: false;";
@@ -82,16 +96,28 @@ static CLICKED_HEAD: AtomicBool = AtomicBool::new(false);
 /// it grants ANY of the listed stat keys, so the flat and percentage forms both
 /// count (an item giving +10% Attack Damage does grant AD). `adaptive_force`
 /// scales with whichever of AD/AP the holder favours, so it counts for both.
-const FILTERS: [(&str, &[&str]); 9] = [
-    ("All items", &[]),
-    ("Attack Damage", &["attack", "attack_mult", "adaptive_force"]),
-    ("Magic Power", &["magic_power", "magic_power_mult", "adaptive_force"]),
+const FILTERS: [(&str, &[&str]); 12] = [
+    ("All Items", &[]),
+    (
+        "Attack Damage",
+        &["attack", "attack_mult", "adaptive_force"],
+    ),
+    (
+        "Magic Power",
+        &["magic_power", "magic_power_mult", "adaptive_force"],
+    ),
     ("Attack Speed", &["attack_speed_mult"]),
     ("Cooldown Reduction", &["skill_cooldown_mult"]),
     ("Crit Chance", &["crit_chance"]),
     ("Health", &["hp", "hp_mult"]),
     ("Armor", &["defence", "defence_mult"]),
-    ("Magic Resist", &["magic_resistance", "magic_resistance_mult"]),
+    (
+        "Magic Resist",
+        &["magic_resistance", "magic_resistance_mult"],
+    ),
+    ("Omnivamp", &["vamp"]),
+    ("Movement Speed", &["move_speed_mult"]),
+    ("Tenacity", &["toughness"]),
 ];
 
 // --- paths ----------------------------------------------------------------
@@ -250,6 +276,9 @@ const ROW_WIDTH: u32 = 246;
 const ROW_HEIGHT: u32 = 28;
 const PANEL_WIDTH: u32 = 260;
 const HEAD_WIDTH: u32 = 260;
+const HEAD_HEIGHT: u32 = 32;
+/// Right inset of the caret, matching `main#dropdown`'s own `icon_layout`.
+const CARET_INSET: u32 = 20;
 /// Gap between rows, and the panel's inset. Both are written into the spawn
 /// source below, so they live here to keep `panel_height` honest.
 const ROW_SPACING: u32 = 2;
@@ -288,7 +317,13 @@ fn root_open_height() -> u32 {
 /// and never sits over the card.
 fn set_open(ctx: &mut StableClient<'_>, root: &str, open: bool) {
     ctx.ui_set_visible(&join(root, PANEL_NODE), open);
-    let height = if open { root_open_height() } else { ROOT_HEIGHT };
+    let caret = join(&join(root, HEAD_NODE), CARET_NODE);
+    ctx.ui_set_properties(&caret, if open { CARET_UP } else { CARET_DOWN });
+    let height = if open {
+        root_open_height()
+    } else {
+        ROOT_HEIGHT
+    };
     ctx.ui_set_properties(root, &format!("height: {height}px;"));
 }
 
@@ -307,9 +342,15 @@ fn control_source() -> String {
     format!(
         "{ROOT_NODE}:empty {{ x: 1060px; y: 6px; width: 540px; height: {ROOT_HEIGHT}px; \
          #{HEAD_NODE}:color_selectable {{ @\"asset/base/style/main#strategy_option\"; \
-           anchor_x: 1; pivot_x: 1; width: {HEAD_WIDTH}px; height: 32px; \
+           anchor_x: 1; pivot_x: 1; width: {HEAD_WIDTH}px; height: {HEAD_HEIGHT}px; \
+           image: {{ color: #4a4c56ff; back_color: #1d1f2cff; stroke: 1; \
+                     rounding: Uniform {{ rounding: 8; }} \
+                     hover: {{ color: #a5a5abff; }} }} \
            label: {{ size: 15; }} selected_label: {{ size: 15; }} \
-           text: \"All items\"; }} \
+           text: \"All Items\"; \
+           #{CARET_NODE}:image {{ {CARET_DOWN} ignore_event: true; color: #a5a5abff; \
+             anchor_x: 1; pivot_x: 1; x: -{CARET_INSET}px; \
+             anchor_y: 0.5; pivot_y: 0.5; width: 8.78px; height: 5.06px; }} }} \
          #{PANEL_NODE}:color {{ anchor_x: 1; pivot_x: 1; y: {PANEL_Y}px; \
            width: {PANEL_WIDTH}px; height: {panel}px; visible: false; \
            color: #4a4c56ff; back_color: #161721ff; stroke: 1; \
@@ -340,7 +381,10 @@ fn apply(items: &ItemStats, ctx: &mut StableClient<'_>, contents: &str, keys: &[
 
         let slot = join(contents, &child);
         ctx.ui_set_properties(&slot, if dim { DIM_SLOT } else { LIT_SLOT });
-        ctx.ui_set_properties(&join(&slot, SLOT_ICON), if dim { DIM_ICON } else { LIT_ICON });
+        ctx.ui_set_properties(
+            &join(&slot, SLOT_ICON),
+            if dim { DIM_ICON } else { LIT_ICON },
+        );
     }
 
     dump_unresolved(&unresolved);
@@ -370,7 +414,6 @@ fn dump_unresolved(names: &[String]) {
         let _ = std::fs::write(cwd.join("item_scroller_unresolved.txt"), body);
     }
 }
-
 
 // --- extension ------------------------------------------------------------
 
@@ -460,7 +503,11 @@ impl StableExtension for ItemFilter {
 
         // Drop a stale path the moment the screen closes, so the next open
         // re-finds it and re-spawns the control.
-        if state.list.as_deref().is_some_and(|path| !ctx.ui_exists(path)) {
+        if state
+            .list
+            .as_deref()
+            .is_some_and(|path| !ctx.ui_exists(path))
+        {
             state.list = None;
             state.built = false;
             state.open = false;
@@ -520,9 +567,14 @@ impl StableExtension for ItemFilter {
 }
 
 fn init(host: &StableHost) -> StableMod {
-    host.log(LogLevel::Info, "item_scroller_tfm2: item stat filter registering");
+    host.log(
+        LogLevel::Info,
+        "item_scroller_tfm2: item stat filter registering",
+    );
     let mut reg = StableMod::new(MOD_ID);
-    reg.set_extension(ItemFilter { state: Mutex::new(State::default()) });
+    reg.set_extension(ItemFilter {
+        state: Mutex::new(State::default()),
+    });
     reg
 }
 
