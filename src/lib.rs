@@ -65,6 +65,8 @@ const CONTENTS_NODE: &str = "contents";
 const SLOT_ICON: &str = "icon";
 
 const ROOT_NODE: &str = "item_filter";
+/// The card column, and the node the control keeps itself pinned above.
+const CARD_NODE: &str = "item_detail_bg";
 const HEAD_NODE: &str = "head";
 const CARET_NODE: &str = "caret";
 const PANEL_NODE: &str = "panel";
@@ -287,6 +289,23 @@ const PANEL_PADDING: u32 = 6;
 /// panel closed.
 const PANEL_Y: u32 = 36;
 const ROOT_HEIGHT: u32 = 40;
+/// The root spans the card column, so the right-anchored head lands over it.
+const ROOT_WIDTH: u32 = 540;
+const ROOT_X: i32 = 1060;
+/// Where `#item_detail_bg` sits on the full Game Info screen: below the tab
+/// strip. The prematch popup has no tab strip and the exe shifts it up to 0.
+const CARD_Y: u32 = 52;
+/// Space left between the control's bottom edge and the top of the card column.
+const CONTROL_GAP: u32 = 6;
+/// How far left the control is pulled once it has ridden up out of the screen
+/// body and into the prematch popup's title bar, whose right end is the close
+/// button. Without it the head would sit under the X.
+const POPUP_X_INSET: i32 = 50;
+/// How much further up the control goes in that same title bar. `place` can
+/// only measure down to the top of the card, and the bar is chrome the exe
+/// draws outside `#data`, so there is no node to centre against - this is the
+/// rest of the way to level with the title and the close button.
+const POPUP_Y_LIFT: i32 = 6;
 
 /// The panel paints its own background, and a painted node needs a real height.
 ///
@@ -339,8 +358,12 @@ fn control_source() -> String {
     }
 
     let panel = panel_height();
+    // Where the control lands on the full Game Info screen; `place` corrects it
+    // from the card's real position as soon as there is a layout pass to read.
+    let spawn_y = CARD_Y as i32 - (ROOT_HEIGHT + CONTROL_GAP) as i32;
     format!(
-        "{ROOT_NODE}:empty {{ x: 1060px; y: 6px; width: 540px; height: {ROOT_HEIGHT}px; \
+        "{ROOT_NODE}:empty {{ x: {ROOT_X}px; y: {spawn_y}px; \
+         width: {ROOT_WIDTH}px; height: {ROOT_HEIGHT}px; \
          #{HEAD_NODE}:color_selectable {{ @\"asset/base/style/main#strategy_option\"; \
            anchor_x: 1; pivot_x: 1; width: {HEAD_WIDTH}px; height: {HEAD_HEIGHT}px; \
            image: {{ color: #4a4c56ff; back_color: #1d1f2cff; stroke: 1; \
@@ -360,6 +383,32 @@ fn control_source() -> String {
            child_type: TopToBottom {{ spacing: {ROW_SPACING}px; }} \
            {rows} }} }}"
     )
+}
+
+/// Keeps the control pinned just above the card column, and reports the `y` it
+/// settled on.
+///
+/// `#item_detail_bg` is declared at `y: 52`, clear of the tab strip above it.
+/// The prematch popup has no tab strip, so the exe shifts the whole column up
+/// to `y: 0` - and the control, being our node rather than one of the exe's,
+/// did not come along. It stayed at `y: 6` and sat on the card's Tier label.
+/// Measuring off the card each frame tracks whichever screen we are on instead
+/// of guessing which one it is.
+///
+/// Rects come back in drawn pixels, so they are divided by the scale the root
+/// is drawn at - its measured width over the `ROOT_WIDTH` it declares - to get
+/// back to the units `ui_set_properties` expects.
+fn place(ctx: &StableClient<'_>, host: &str, root: &str) -> Option<i32> {
+    let (_, host_y, _, _) = ctx.ui_node_rect(host)?;
+    let (_, card_y, _, _) = ctx.ui_node_rect(&join(host, CARD_NODE))?;
+    let (_, _, root_w, _) = ctx.ui_node_rect(root)?;
+
+    let scale = root_w / ROOT_WIDTH as f32;
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let card_top = ((card_y - host_y) / scale).round() as i32;
+    Some(card_top - (ROOT_HEIGHT + CONTROL_GAP) as i32)
 }
 
 // --- filtering ------------------------------------------------------------
@@ -428,6 +477,9 @@ struct State {
     items: ItemStats,
     loaded: bool,
     applied: Option<(usize, usize)>,
+    /// Last `y` written by `place`, so the properties are only rewritten when
+    /// the control actually has to move.
+    placed: Option<i32>,
 }
 
 struct ItemFilter {
@@ -512,6 +564,7 @@ impl StableExtension for ItemFilter {
             state.built = false;
             state.open = false;
             state.applied = None;
+            state.placed = None;
         }
 
         if state.list.is_none() {
@@ -553,6 +606,24 @@ impl StableExtension for ItemFilter {
         }
 
         let root = join(&host, ROOT_NODE);
+
+        if let Some(y) = place(ctx, &host, &root) {
+            if state.placed != Some(y) {
+                state.placed = Some(y);
+                // A negative `y` means the card had no strip above it to sit
+                // in, so the control has ridden up into the prematch popup's
+                // title bar: it has to clear the close button at that bar's
+                // right end, and sit level with the title rather than hanging
+                // below it.
+                let (x, y) = if y < 0 {
+                    (ROOT_X - POPUP_X_INSET, y - POPUP_Y_LIFT)
+                } else {
+                    (ROOT_X, y)
+                };
+                ctx.ui_set_properties(&root, &format!("x: {x}px; y: {y}px;"));
+            }
+        }
+
         let changed = Self::poll(&mut state, ctx, &root);
 
         // The game repopulates the grid when the tab is reopened, so reapply on
