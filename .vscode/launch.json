@@ -1,0 +1,44 @@
+{
+    "version": "0.2.0",
+    // F5 runs the first configuration here unless you have picked a different
+    // one from the Run and Debug dropdown, so build-and-deploy leads.
+    "configurations": [
+        {
+            // Builds with `cargo build --release`, wipes the deployed copy in the
+            // game folder and lays it down fresh. deploy.ps1 refuses to run while
+            // the game holds the DLL open. Warns when a subscribed Workshop copy
+            // of the same mod id is installed - that copy may be what loads.
+            "name": "Build + deploy",
+            "type": "PowerShell",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "script": "${workspaceFolder}\\deploy.ps1"
+        },
+        {
+            // Same, minus the cargo build - redeploys whatever
+            // item_scroller_tfm2.dll is already sitting in the repo root, plus
+            // the current ui/ layouts. This is the one to use for a layout-only
+            // change.
+            "name": "Deploy only (no build)",
+            "type": "PowerShell",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "script": "${workspaceFolder}\\deploy.ps1",
+            "args": [
+                "-SkipBuild"
+            ]
+        },
+        {
+            // Prints what would be copied or deleted, changing nothing.
+            "name": "Deploy (dry run)",
+            "type": "PowerShell",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "script": "${workspaceFolder}\\deploy.ps1",
+            "args": [
+                "-WhatIf",
+                "-SkipBuild"
+            ]
+        }
+    ]
+}
