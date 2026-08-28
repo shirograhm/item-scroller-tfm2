@@ -105,7 +105,7 @@ const FILTERS: [(&str, &[&str]); 12] = [
         &["attack", "attack_mult", "adaptive_force"],
     ),
     (
-        "Magic Power",
+        "Ability Power",
         &["magic_power", "magic_power_mult", "adaptive_force"],
     ),
     ("Attack Speed", &["attack_speed_mult"]),

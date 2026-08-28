@@ -1,7 +1,7 @@
 {
   "name": "Item Scroller",
   "author": "shirograhm",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Adds scrolling functionality and stat filtering to the item info page in Teamfight Manager 2.",
   "last_updated": "2026-08-18",
   "dependencies": [
