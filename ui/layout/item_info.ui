@@ -328,10 +328,26 @@ item_info:item_info_ui {
           text: "#asset/base/text/item?related.upper_items";
         }
 
-        #slots:empty {
+        #slots:scroll_view {
           y: 137px;
-          width: 500px;
-          height: auto;
+          width: 512px;
+          height: 304px;
+
+          speed: 100;
+          bar_width: 4;
+          bar: {
+            source: "asset/base/sprite/white";
+            color: #37d5b3ff;
+
+            hover: {
+              color: #ecfbf8ff;
+            }
+          }
+
+          back: {
+            source: "asset/base/sprite/white";
+            color: #4a4c56ff;
+          }
 
           child_type: Table {
             spacing_x: 10px;
