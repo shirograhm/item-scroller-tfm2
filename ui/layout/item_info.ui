@@ -331,7 +331,7 @@ item_info:item_info_ui {
         #slots:scroll_view {
           y: 137px;
           width: 512px;
-          height: 260px;
+          height: 304px;
 
           speed: 100;
           bar_width: 4;
