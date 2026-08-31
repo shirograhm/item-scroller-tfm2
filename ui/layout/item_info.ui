@@ -204,7 +204,7 @@ item_info:item_info_ui {
         @"asset/base/style/main#label";
         x: 92px;
         y: 20px;
-        width: 350px;
+        width: 428px;
         height: 30px;
 
         align_y: Center;
@@ -227,8 +227,10 @@ item_info:item_info_ui {
         align_x: Right;
         align_y: Center;
         size: 20;
-        color: #667085ff;
+        color: #66708500;
         text: "";
+
+        visible: false;
       }
 
       #price_area:empty {
