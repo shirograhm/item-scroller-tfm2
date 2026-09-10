@@ -33,6 +33,27 @@
 //! (it has no explicit color in the template, meaning plain white is the
 //! correct value to restore).
 //!
+//! # The class filter
+//!
+//! The second dropdown groups items the way `riot_items_tfm2` does - Assassin,
+//! Fighter, Tank, Mage, Marksman, Support - and that mapping is data nowhere:
+//! it is a table compiled into that pack's `item_catalog.rs`, and neither what
+//! the pack ships (`config-default.json` is the player's balance file, stats
+//! only) nor any client API reaches it. So the table is copied here, generated
+//! from the pack's rather than retyped, and it has to be re-copied when the
+//! pack adds items. An item the copy does not know simply has no class, which
+//! reads as "grey under every class" rather than as a wrong class.
+//!
+//! Unlike the stat filter, an unknown item is greyed rather than left lit: the
+//! base game's items and the pack's own components have no class at all, so
+//! leaving every unclassified item lit would filter nothing.
+//!
+//! The menu hides itself when the pack is not installed. Every slug in the
+//! table is one of the pack's own items, so a single match in the grid is
+//! proof. The six base items it reskins as its `radiant_` tier are the
+//! exception: they are classified, but they cannot count as proof, because
+//! they sit in the grid with or without the pack.
+//!
 //! # Where item stats come from
 //!
 //! Two sources, because there is no single one:
@@ -67,9 +88,7 @@ const SLOT_ICON: &str = "icon";
 const ROOT_NODE: &str = "item_filter";
 /// The card column, and the node the control keeps itself pinned above.
 const CARD_NODE: &str = "item_detail_bg";
-const HEAD_NODE: &str = "head";
 const CARET_NODE: &str = "caret";
-const PANEL_NODE: &str = "panel";
 
 const MAX_DEPTH: usize = 16;
 const SEARCH_INTERVAL_FRAMES: u32 = 30;
@@ -90,9 +109,11 @@ const DIM_ICON: &str = "color: #ffffff59;";
 const LIT_ICON: &str = "color: #ffffffff;";
 
 /// Written by the click handlers, which get only a reduced context and cannot
-/// touch our state. `usize::MAX` means "nothing clicked since last read".
-static CLICKED_ROW: AtomicUsize = AtomicUsize::new(usize::MAX);
-static CLICKED_HEAD: AtomicBool = AtomicBool::new(false);
+/// touch our state; one slot per menu. `usize::MAX` means "nothing clicked
+/// since last read".
+static CLICKED_ROW: [AtomicUsize; MENU_COUNT] =
+    [const { AtomicUsize::new(usize::MAX) }; MENU_COUNT];
+static CLICKED_HEAD: [AtomicBool; MENU_COUNT] = [const { AtomicBool::new(false) }; MENU_COUNT];
 
 /// The dropdown, in order. Index 0 clears the filter; the rest match an item if
 /// it grants ANY of the listed stat keys, so the flat and percentage forms both
@@ -121,6 +142,140 @@ const FILTERS: [(&str, &[&str]); 12] = [
     ("Movement Speed", &["move_speed_mult"]),
     ("Tenacity", &["toughness"]),
 ];
+
+/// The class dropdown, in order. Index 0 clears the filter; every later index
+/// is a class code in [`CLASS_OF`], offset by one.
+const CLASSES: [&str; 7] = [
+    "All Classes",
+    "Assassin",
+    "Fighter",
+    "Tank",
+    "Mage",
+    "Marksman",
+    "Support",
+];
+
+/// `riot_items_tfm2`'s item -> class table, generated from the `CATEGORY_OF`
+/// compiled into that pack's `item_catalog.rs`. Sorted by slug, for
+/// `binary_search_by_key`. Codes index [`CLASSES`] minus its first entry.
+const CLASS_OF: [(&str, u8); 74] = [
+    ("ardent_censer", 5),
+    ("atmas_reckoning", 2),
+    ("axiom_arc", 0),
+    ("bastionbreaker", 0),
+    ("black_cleaver", 1),
+    ("blackfire_torch", 3),
+    ("blade_of_the_ruined_king", 4),
+    ("bloodletters_curse", 3),
+    ("bloodsong", 5),
+    ("bloodthirster", 1),
+    ("cloak_of_starry_night", 2),
+    ("collector", 0),
+    ("dead_mans_plate", 2),
+    ("deathblade", 4),
+    ("deaths_dance", 1),
+    ("diamond_tipped_spear", 4),
+    ("dragons_claw", 2),
+    ("dusk_and_dawn", 3),
+    ("echoes_of_helia", 5),
+    ("eclipse", 1),
+    ("experimental_hexplate", 1),
+    ("feral_flare", 1),
+    ("frozen_heart", 2),
+    ("frozen_mallet", 1),
+    ("grezs_spectral_lantern", 3),
+    ("guinsoos_rageblade", 4),
+    ("hamstringer", 4),
+    ("heartsteel", 2),
+    ("hextech_gunblade", 3),
+    ("hubris", 0),
+    ("infinity_edge", 4),
+    ("jaksho_the_protean", 2),
+    ("kraken_slayer", 4),
+    ("liandrys_torment", 3),
+    ("locket_of_the_iron_solari", 5),
+    ("lord_dominiks_regards", 4),
+    ("ludens_tempest", 3),
+    ("malignance", 3),
+    ("mirage_blade", 4),
+    ("morellonomicon", 3),
+    ("mortal_reminder", 4),
+    ("nashors_tooth", 3),
+    ("night_harvester", 3),
+    ("opportunity", 0),
+    ("overlords_bloodmail", 1),
+    ("phantom_dancer", 4),
+    ("protectors_vow", 2),
+    ("protoplasm_harness", 5),
+    ("rabadons_deathcap", 3),
+    ("randuins_omen", 2),
+    ("ravenous_hydra", 1),
+    ("riftmaker", 3),
+    ("rite_of_ruin", 3),
+    ("rylais_crystal_scepter", 3),
+    ("serpents_fang", 0),
+    ("shadowflame", 3),
+    ("spear_of_shojin", 1),
+    ("spirit_visage", 2),
+    ("steraks_gage", 1),
+    ("stormrazor", 4),
+    ("stormsurge", 3),
+    ("sundered_sky", 1),
+    ("sunfire_cape", 2),
+    ("sword_of_blossoming_dawn", 5),
+    ("terminus", 4),
+    ("thornmail", 2),
+    ("trinity_force", 1),
+    ("unending_despair", 2),
+    ("void_staff", 3),
+    ("voltaic_cyclosword", 0),
+    ("warmogs_armor", 2),
+    ("wits_end", 4),
+    ("yun_tal_wildarrows", 4),
+    ("zekes_herald", 5),
+];
+
+/// The six base game items the pack reskins as its `radiant_` tier, mapped to
+/// the slug the class table knows them by. They keep their base ids, so they
+/// are the one kind of classified item that is in the grid whether or not the
+/// pack is installed - which is why [`pack_class`] does not look at them.
+const RESKINNED: [(&str, &str); 6] = [
+    ("giants_horn_shard", "sunfire_cape"),
+    ("impregnable_fortress", "thornmail"),
+    ("prophet_of_the_abyss", "ludens_tempest"),
+    ("storm_sovereign", "phantom_dancer"),
+    ("veil_of_annihilation", "dragons_claw"),
+    ("warlords_final_judgement", "bloodthirster"),
+];
+
+fn class_of_slug(slug: &str) -> Option<u8> {
+    CLASS_OF
+        .binary_search_by_key(&slug, |(key, _)| *key)
+        .ok()
+        .map(|index| CLASS_OF[index].1)
+}
+
+/// The class of an item the pack itself adds - and so also the test for whether
+/// the pack is installed at all, since every slug in the table is one of its
+/// items. A `radiant_` upgrade carries its base item's id under the prefix.
+fn pack_class(id: &str) -> Option<u8> {
+    class_of_slug(id.strip_prefix("radiant_").unwrap_or(id))
+}
+
+/// The class of any item in the grid, the reskinned base items included.
+fn class_of(id: &str) -> Option<u8> {
+    pack_class(id).or_else(|| {
+        RESKINNED
+            .iter()
+            .find(|(key, _)| *key == id)
+            .and_then(|(_, slug)| class_of_slug(slug))
+    })
+}
+
+/// The class code a dropdown index selects, or `None` for "All Classes".
+fn class_filter(index: usize) -> Option<u8> {
+    index.checked_sub(1).map(|code| code as u8)
+}
 
 // --- paths ----------------------------------------------------------------
 
@@ -279,6 +434,12 @@ const ROW_HEIGHT: u32 = 28;
 const PANEL_WIDTH: u32 = 260;
 const HEAD_WIDTH: u32 = 260;
 const HEAD_HEIGHT: u32 = 32;
+/// Space between the two heads. The pair is right-anchored, so it grows left
+/// into the gap above the item grid: 2 * 260 + 8 leaves 12px of the 540px root
+/// to spare, and stops 64px clear of `#sub_tabs`, which ends at x 1008.
+const MENU_GAP: u32 = 8;
+/// The pair is only ever as wide as the root it is anchored inside.
+const _: () = assert!(HEAD_WIDTH * 2 + MENU_GAP <= ROOT_WIDTH);
 /// Right inset of the caret, matching `main#dropdown`'s own `icon_layout`.
 const CARET_INSET: u32 = 20;
 /// Gap between rows, and the panel's inset. Both are written into the spawn
@@ -307,6 +468,57 @@ const POPUP_X_INSET: i32 = 50;
 /// rest of the way to level with the title and the close button.
 const POPUP_Y_LIFT: i32 = 6;
 
+const MENU_COUNT: usize = 2;
+/// Index of each menu in [`MENUS`], and into `State::current`.
+const STAT: usize = 0;
+const CLASS: usize = 1;
+
+#[derive(Clone, Copy)]
+struct Menu {
+    head: &'static str,
+    panel: &'static str,
+    /// Offset from the root's right edge. Both menus are right-anchored, so
+    /// the stat one keeps the spot it has always had and the class one hangs
+    /// off its left.
+    x: i32,
+}
+
+const MENUS: [Menu; MENU_COUNT] = [
+    Menu {
+        head: "head",
+        panel: "panel",
+        x: 0,
+    },
+    Menu {
+        head: "class_head",
+        panel: "class_panel",
+        x: -((HEAD_WIDTH + MENU_GAP) as i32),
+    },
+];
+
+fn options(menu: usize) -> usize {
+    if menu == STAT {
+        FILTERS.len()
+    } else {
+        CLASSES.len()
+    }
+}
+
+fn option_label(menu: usize, index: usize) -> &'static str {
+    if menu == STAT {
+        FILTERS[index].0
+    } else {
+        CLASSES[index]
+    }
+}
+
+/// A head shows the chosen option, and does so twice: the runner reads the
+/// declared `text` property, and `ui_set_text` covers the label node itself.
+fn set_head_label(ctx: &mut StableClient<'_>, head: &str, label: &str) {
+    ctx.ui_set_properties(head, &format!("text: \"{label}\";"));
+    ctx.ui_set_text(head, label);
+}
+
 /// The panel paints its own background, and a painted node needs a real height.
 ///
 /// With `height: auto` the fill covered only the first row while the rest of the
@@ -315,17 +527,19 @@ const POPUP_Y_LIFT: i32 = 6;
 /// (`item_filter`) is a fixed 40px, so `auto` has nothing to grow against.
 /// Computed rather than hardcoded so adding a filter cannot silently re-open the
 /// same gap.
-fn panel_height() -> u32 {
-    let rows = FILTERS.len() as u32;
+fn panel_height(menu: usize) -> u32 {
+    let rows = options(menu) as u32;
     rows * ROW_HEIGHT + rows.saturating_sub(1) * ROW_SPACING + PANEL_PADDING * 2
 }
 
-/// How tall the root has to be for the open panel to fit inside it.
-fn root_open_height() -> u32 {
-    PANEL_Y + panel_height()
+/// How tall the root has to be for the open panel to fit inside it. The two
+/// panels are different lengths, so this is asked of whichever one is open.
+fn root_open_height(menu: usize) -> u32 {
+    PANEL_Y + panel_height(menu)
 }
 
-/// Shows or hides the option panel.
+/// Shows the open menu's panel and hides the other's - only ever one at a
+/// time, so the two lists can never overlap.
 ///
 /// The panel is a child of the root, and the root is a fixed 40px strip, so the
 /// panel's painted background was being clipped to that 40px — covering only the
@@ -334,21 +548,22 @@ fn root_open_height() -> u32 {
 /// height was not enough on its own; the root has to make room for it. It is
 /// restored on close so the collapsed control still occupies just its own strip
 /// and never sits over the card.
-fn set_open(ctx: &mut StableClient<'_>, root: &str, open: bool) {
-    ctx.ui_set_visible(&join(root, PANEL_NODE), open);
-    let caret = join(&join(root, HEAD_NODE), CARET_NODE);
-    ctx.ui_set_properties(&caret, if open { CARET_UP } else { CARET_DOWN });
-    let height = if open {
-        root_open_height()
-    } else {
-        ROOT_HEIGHT
-    };
+fn set_open(ctx: &mut StableClient<'_>, root: &str, open: Option<usize>) {
+    for (menu, spec) in MENUS.iter().enumerate() {
+        let shown = open == Some(menu);
+        ctx.ui_set_visible(&join(root, spec.panel), shown);
+        let caret = join(&join(root, spec.head), CARET_NODE);
+        ctx.ui_set_properties(&caret, if shown { CARET_UP } else { CARET_DOWN });
+    }
+    let height = open.map_or(ROOT_HEIGHT, root_open_height);
     ctx.ui_set_properties(root, &format!("height: {height}px;"));
 }
 
-fn control_source() -> String {
+/// One menu: the head, and the panel that drops out of it.
+fn menu_source(menu: usize) -> String {
     let mut rows = String::new();
-    for (index, (label, _)) in FILTERS.iter().enumerate() {
+    for index in 0..options(menu) {
+        let label = option_label(menu, index);
         rows.push_str(&format!(
             "#opt{index}:color_selectable {{ @\"asset/base/style/main#strategy_option\"; \
              width: {ROW_WIDTH}px; height: {ROW_HEIGHT}px; \
@@ -357,31 +572,43 @@ fn control_source() -> String {
         ));
     }
 
-    let panel = panel_height();
-    // Where the control lands on the full Game Info screen; `place` corrects it
-    // from the card's real position as soon as there is a layout pass to read.
-    let spawn_y = CARD_Y as i32 - (ROOT_HEIGHT + CONTROL_GAP) as i32;
+    let Menu { head, panel, x } = MENUS[menu];
+    let height = panel_height(menu);
+    let title = option_label(menu, 0);
+    // The class menu stays hidden until the pack whose classes it lists has
+    // been seen in the grid, so it never offers a filter that matches nothing.
+    let hidden = if menu == STAT { "" } else { "visible: false; " };
     format!(
-        "{ROOT_NODE}:empty {{ x: {ROOT_X}px; y: {spawn_y}px; \
-         width: {ROOT_WIDTH}px; height: {ROOT_HEIGHT}px; \
-         #{HEAD_NODE}:color_selectable {{ @\"asset/base/style/main#strategy_option\"; \
-           anchor_x: 1; pivot_x: 1; width: {HEAD_WIDTH}px; height: {HEAD_HEIGHT}px; \
+        "#{head}:color_selectable {{ @\"asset/base/style/main#strategy_option\"; \
+           anchor_x: 1; pivot_x: 1; x: {x}px; {hidden}\
+           width: {HEAD_WIDTH}px; height: {HEAD_HEIGHT}px; \
            image: {{ color: #4a4c56ff; back_color: #1d1f2cff; stroke: 1; \
                      rounding: Uniform {{ rounding: 8; }} \
                      hover: {{ color: #a5a5abff; }} }} \
            label: {{ size: 15; }} selected_label: {{ size: 15; }} \
-           text: \"All Items\"; \
+           text: \"{title}\"; \
            #{CARET_NODE}:image {{ {CARET_DOWN} ignore_event: true; color: #a5a5abff; \
              anchor_x: 1; pivot_x: 1; x: -{CARET_INSET}px; \
              anchor_y: 0.5; pivot_y: 0.5; width: 8.78px; height: 5.06px; }} }} \
-         #{PANEL_NODE}:color {{ anchor_x: 1; pivot_x: 1; y: {PANEL_Y}px; \
-           width: {PANEL_WIDTH}px; height: {panel}px; visible: false; \
+         #{panel}:color {{ anchor_x: 1; pivot_x: 1; x: {x}px; y: {PANEL_Y}px; \
+           width: {PANEL_WIDTH}px; height: {height}px; visible: false; \
            color: #4a4c56ff; back_color: #161721ff; stroke: 1; \
            rounding: Uniform {{ rounding: 8; }} \
            padding: {{ left: {PANEL_PADDING}px; right: {PANEL_PADDING}px; \
                        top: {PANEL_PADDING}px; bottom: {PANEL_PADDING}px; }} \
            child_type: TopToBottom {{ spacing: {ROW_SPACING}px; }} \
-           {rows} }} }}"
+           {rows} }} "
+    )
+}
+
+fn control_source() -> String {
+    let menus: String = (0..MENU_COUNT).map(menu_source).collect();
+    // Where the control lands on the full Game Info screen; `place` corrects it
+    // from the card's real position as soon as there is a layout pass to read.
+    let spawn_y = CARD_Y as i32 - (ROOT_HEIGHT + CONTROL_GAP) as i32;
+    format!(
+        "{ROOT_NODE}:empty {{ x: {ROOT_X}px; y: {spawn_y}px; \
+         width: {ROOT_WIDTH}px; height: {ROOT_HEIGHT}px; {menus} }}"
     )
 }
 
@@ -413,13 +640,30 @@ fn place(ctx: &StableClient<'_>, host: &str, root: &str) -> Option<i32> {
 
 // --- filtering ------------------------------------------------------------
 
-/// Applies the filter by graying non-matching slots. Slots we have no stats for
-/// are left lit.
-fn apply(items: &ItemStats, ctx: &mut StableClient<'_>, contents: &str, keys: &[&str]) {
+/// Applies both filters by graying every slot that fails either one.
+///
+/// A slot we have no stats for is left lit, but a slot we have no class for is
+/// grayed: see the class-filter note at the top of the file for why the two
+/// unknowns are treated as opposites.
+fn apply(
+    items: &ItemStats,
+    ctx: &mut StableClient<'_>,
+    contents: &str,
+    keys: &[&str],
+    class: Option<u8>,
+) {
     let mut unresolved: Vec<String> = Vec::new();
 
     for child in ctx.ui_child_names(contents) {
-        let dim = !keys.is_empty()
+        let slot = join(contents, &child);
+        let icon = join(&slot, SLOT_ICON);
+        // The tier headers are children of the grid too, and are not items.
+        // The slot template's `#icon` is what tells the two apart.
+        if !ctx.ui_exists(&icon) {
+            continue;
+        }
+
+        let stat_dim = !keys.is_empty()
             && match items.get(&child) {
                 Some(granted) => !keys.iter().any(|key| granted.iter().any(|had| had == key)),
                 None => {
@@ -427,13 +671,11 @@ fn apply(items: &ItemStats, ctx: &mut StableClient<'_>, contents: &str, keys: &[
                     false
                 }
             };
+        let class_dim = class.is_some_and(|wanted| class_of(&child) != Some(wanted));
+        let dim = stat_dim || class_dim;
 
-        let slot = join(contents, &child);
         ctx.ui_set_properties(&slot, if dim { DIM_SLOT } else { LIT_SLOT });
-        ctx.ui_set_properties(
-            &join(&slot, SLOT_ICON),
-            if dim { DIM_ICON } else { LIT_ICON },
-        );
+        ctx.ui_set_properties(&icon, if dim { DIM_ICON } else { LIT_ICON });
     }
 
     dump_unresolved(&unresolved);
@@ -472,11 +714,16 @@ struct State {
     list: Option<String>,
     search_wait: u32,
     built: bool,
-    open: bool,
-    current: usize,
+    /// Which menu's panel is down, if any. Only one is ever open.
+    open: Option<usize>,
+    /// Chosen option per menu, indexed by [`STAT`] / [`CLASS`].
+    current: [usize; MENU_COUNT],
     items: ItemStats,
     loaded: bool,
-    applied: Option<(usize, usize)>,
+    /// Whether the item pack that defines the classes is installed, which is
+    /// also whether the class menu is on screen.
+    classed: bool,
+    applied: Option<([usize; MENU_COUNT], usize)>,
     /// Last `y` written by `place`, so the properties are only rewritten when
     /// the control actually has to move.
     placed: Option<i32>,
@@ -494,15 +741,59 @@ impl ItemFilter {
         }
         state.built = true;
 
+        // A fresh control comes up on the labels its source declares - option 0
+        // in both menus - so the filters have to come back to zero with it.
+        // They used to outlive the control, and the grid kept a greying the
+        // heads no longer admitted to: reopening Item Info from the item builds
+        // screen showed "All Items" over a still-greyed grid. Writing the old
+        // labels back onto the fresh heads instead does not work, because the
+        // spawn is not addressable until a layout pass has run.
+        state.current = [0; MENU_COUNT];
+        state.open = None;
+
         let root = join(host, ROOT_NODE);
-        ctx.ui_register_click(&join(&root, HEAD_NODE), "", |_| {
-            CLICKED_HEAD.store(true, Ordering::Relaxed);
-        });
-        let panel = join(&root, PANEL_NODE);
-        for index in 0..FILTERS.len() {
-            ctx.ui_register_click(&join(&panel, &format!("opt{index}")), "", move |_| {
-                CLICKED_ROW.store(index, Ordering::Relaxed);
+        for (menu, spec) in MENUS.iter().enumerate() {
+            let head = join(&root, spec.head);
+            ctx.ui_register_click(&head, "", move |_| {
+                CLICKED_HEAD[menu].store(true, Ordering::Relaxed);
             });
+            let panel = join(&root, spec.panel);
+            for index in 0..options(menu) {
+                ctx.ui_register_click(&join(&panel, &format!("opt{index}")), "", move |_| {
+                    CLICKED_ROW[menu].store(index, Ordering::Relaxed);
+                });
+            }
+        }
+
+        // The clicks that chose the old filters may still be sitting in the
+        // atomics if the screen went away between the click and this frame;
+        // draining them here keeps them from selecting into the new control.
+        for menu in 0..MENU_COUNT {
+            CLICKED_HEAD[menu].store(false, Ordering::Relaxed);
+            CLICKED_ROW[menu].store(usize::MAX, Ordering::Relaxed);
+        }
+    }
+
+    /// Shows or hides the class menu, which only earns its place when the pack
+    /// that defines the classes is installed. The grid is the test: every slug
+    /// in [`CLASS_OF`] is one of the pack's own items.
+    fn detect_classes(state: &mut State, ctx: &mut StableClient<'_>, root: &str, contents: &str) {
+        let classed = ctx
+            .ui_child_names(contents)
+            .iter()
+            .any(|name| pack_class(name).is_some());
+        if classed == state.classed {
+            return;
+        }
+        state.classed = classed;
+        ctx.ui_set_visible(&join(root, MENUS[CLASS].head), classed);
+        if !classed {
+            // Nothing left to filter by, and no head to say so.
+            state.current[CLASS] = 0;
+            if state.open == Some(CLASS) {
+                state.open = None;
+            }
+            set_open(ctx, root, state.open);
         }
     }
 
@@ -510,40 +801,51 @@ impl ItemFilter {
     /// `selected` flag; both are drained here, and the flag is cleared so the
     /// rows never look stuck.
     fn poll(state: &mut State, ctx: &mut StableClient<'_>, root: &str) -> bool {
-        let head = join(root, HEAD_NODE);
-        let head_selected = ctx.ui_selectable_selected(&head).unwrap_or(false);
-        if head_selected {
-            ctx.ui_set_selectable_selected(&head, false);
-        }
-        if CLICKED_HEAD.swap(false, Ordering::Relaxed) || head_selected {
-            state.open = !state.open;
-            set_open(ctx, root, state.open);
-        }
+        let mut changed = false;
 
-        let panel = join(root, PANEL_NODE);
-        let mut chosen = match CLICKED_ROW.swap(usize::MAX, Ordering::Relaxed) {
-            usize::MAX => None,
-            index => Some(index),
-        };
-        for index in 0..FILTERS.len() {
-            let row = join(&panel, &format!("opt{index}"));
-            if ctx.ui_selectable_selected(&row).unwrap_or(false) {
-                ctx.ui_set_selectable_selected(&row, false);
-                chosen = Some(index);
+        for (menu, spec) in MENUS.iter().enumerate() {
+            // A hidden menu cannot be clicked, so there is nothing to drain.
+            if menu == CLASS && !state.classed {
+                continue;
             }
+
+            let head = join(root, spec.head);
+            let head_selected = ctx.ui_selectable_selected(&head).unwrap_or(false);
+            if head_selected {
+                ctx.ui_set_selectable_selected(&head, false);
+            }
+            if CLICKED_HEAD[menu].swap(false, Ordering::Relaxed) || head_selected {
+                // Opening either menu closes the other, so the two panels can
+                // never be down at once.
+                state.open = (state.open != Some(menu)).then_some(menu);
+                set_open(ctx, root, state.open);
+            }
+
+            let panel = join(root, spec.panel);
+            let mut chosen = match CLICKED_ROW[menu].swap(usize::MAX, Ordering::Relaxed) {
+                usize::MAX => None,
+                index => Some(index),
+            };
+            for index in 0..options(menu) {
+                let row = join(&panel, &format!("opt{index}"));
+                if ctx.ui_selectable_selected(&row).unwrap_or(false) {
+                    ctx.ui_set_selectable_selected(&row, false);
+                    chosen = Some(index);
+                }
+            }
+
+            let Some(index) = chosen.filter(|index| *index < options(menu)) else {
+                continue;
+            };
+
+            state.current[menu] = index;
+            state.open = None;
+            set_open(ctx, root, None);
+            set_head_label(ctx, &head, option_label(menu, index));
+            changed = true;
         }
 
-        let Some(index) = chosen.filter(|index| *index < FILTERS.len()) else {
-            return false;
-        };
-
-        state.current = index;
-        state.open = false;
-        set_open(ctx, root, false);
-        let label = FILTERS[index].0;
-        ctx.ui_set_properties(&head, &format!("text: \"{label}\";"));
-        ctx.ui_set_text(&head, label);
-        true
+        changed
     }
 }
 
@@ -562,7 +864,8 @@ impl StableExtension for ItemFilter {
         {
             state.list = None;
             state.built = false;
-            state.open = false;
+            state.open = None;
+            state.classed = false;
             state.applied = None;
             state.placed = None;
         }
@@ -624,14 +927,20 @@ impl StableExtension for ItemFilter {
             }
         }
 
+        // The game repopulates the grid when the tab is reopened, so a changed
+        // child count is both when the filters have to be reapplied and when
+        // the pack's items could first have appeared.
+        let count = ctx.ui_child_count(&contents).unwrap_or(0);
+        if state.applied.is_none_or(|(_, applied)| applied != count) {
+            Self::detect_classes(&mut state, ctx, &root, &contents);
+        }
+
         let changed = Self::poll(&mut state, ctx, &root);
 
-        // The game repopulates the grid when the tab is reopened, so reapply on
-        // a child-count change as well as on a selection change.
-        let count = ctx.ui_child_count(&contents).unwrap_or(0);
         if changed || state.applied != Some((state.current, count)) {
-            let keys = FILTERS[state.current].1;
-            apply(&state.items, ctx, &contents, keys);
+            let keys = FILTERS[state.current[STAT]].1;
+            let class = class_filter(state.current[CLASS]);
+            apply(&state.items, ctx, &contents, keys, class);
             state.applied = Some((state.current, count));
         }
     }
@@ -650,3 +959,33 @@ fn init(host: &StableHost) -> StableMod {
 }
 
 declare_stable_mod!(init);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `class_of_slug` binary searches, and the table is a copy maintained by
+    /// hand, so a re-copy that lands out of order has to fail loudly rather
+    /// than silently mislaying items.
+    #[test]
+    fn class_table_is_sorted() {
+        assert!(CLASS_OF.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert!(CLASS_OF
+            .iter()
+            .all(|(_, code)| (*code as usize) < CLASSES.len() - 1));
+    }
+
+    #[test]
+    fn classes_resolve() {
+        // The pack's own item, its radiant upgrade, and a base item the pack
+        // reskins as a radiant - the last classified, but never proof the pack
+        // is installed.
+        assert_eq!(class_of("hubris"), Some(0));
+        assert_eq!(class_of("radiant_thornmail"), Some(2));
+        assert_eq!(class_of("impregnable_fortress"), Some(2));
+        assert!(pack_class("impregnable_fortress").is_none());
+        // A base item and one of the pack's components have no class at all.
+        assert!(class_of("iron_blade").is_none());
+        assert!(class_of("bf_sword").is_none());
+    }
+}
