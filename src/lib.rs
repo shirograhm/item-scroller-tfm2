@@ -130,7 +130,7 @@ const FILTERS: [(&str, &[&str]); 12] = [
         &["magic_power", "magic_power_mult", "adaptive_force"],
     ),
     ("Attack Speed", &["attack_speed_mult"]),
-    ("Cooldown Reduction", &["skill_cooldown_mult"]),
+    ("Ability Haste", &["skill_cooldown_mult"]),
     ("Crit Chance", &["crit_chance"]),
     ("Health", &["hp", "hp_mult"]),
     ("Armor", &["defence", "defence_mult"]),
@@ -158,10 +158,11 @@ const CLASSES: [&str; 7] = [
 /// `riot_items_tfm2`'s item -> class table, generated from the `CATEGORY_OF`
 /// compiled into that pack's `item_catalog.rs`. Sorted by slug, for
 /// `binary_search_by_key`. Codes index [`CLASSES`] minus its first entry.
-const CLASS_OF: [(&str, u8); 74] = [
+const CLASS_OF: [(&str, u8); 78] = [
     ("ardent_censer", 5),
     ("atmas_reckoning", 2),
     ("axiom_arc", 0),
+    ("bandlepipes", 5),
     ("bastionbreaker", 0),
     ("black_cleaver", 1),
     ("blackfire_torch", 3),
@@ -169,6 +170,8 @@ const CLASS_OF: [(&str, u8); 74] = [
     ("bloodletters_curse", 3),
     ("bloodsong", 5),
     ("bloodthirster", 1),
+    ("chempunk_chainsword", 1),
+    ("chemtech_putrifier", 5),
     ("cloak_of_starry_night", 2),
     ("collector", 0),
     ("dead_mans_plate", 2),
@@ -214,6 +217,7 @@ const CLASS_OF: [(&str, u8); 74] = [
     ("rite_of_ruin", 3),
     ("rylais_crystal_scepter", 3),
     ("serpents_fang", 0),
+    ("seryldas_grudge", 0),
     ("shadowflame", 3),
     ("spear_of_shojin", 1),
     ("spirit_visage", 2),
