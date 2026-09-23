@@ -54,6 +54,21 @@
 //! exception: they are classified, but they cannot count as proof, because
 //! they sit in the grid with or without the pack.
 //!
+//! # The Boots section
+//!
+//! The grid is built by the exe, one `tier_header` per item tier and the items
+//! under their own tier, so `riot_items_tfm2`'s boots land in two places:
+//! Boots under Starter, the seven upgrades under Epic. The grid cannot be told
+//! otherwise, and the stable API cannot move a node, so [`regroup_boots`]
+//! removes the exe's boots slots and appends a Boots header and rebuilt slots
+//! after the last section. The rebuilt slots keep the exe's node names (the
+//! item ids), which is what the filters above look items up by, and what gives
+//! the exe's own click handling its best chance of still reaching them.
+//!
+//! It only runs when the pack itself is in the grid - the same test that shows
+//! the class menu - so another mod's item that happens to share a boots id is
+//! left where the exe put it.
+//!
 //! # Where item stats come from
 //!
 //! Two sources, because there is no single one:
@@ -108,6 +123,26 @@ const LIT_SLOT: &str = "disable: false;";
 const DIM_ICON: &str = "color: #ffffff59;";
 const LIT_ICON: &str = "color: #ffffffff;";
 
+/// `riot_items_tfm2`'s boots, in the order the Boots section shows them: the
+/// tier-1 pair first, then its upgrades alphabetically.
+const BOOTS: [&str; 8] = [
+    "boots",
+    "berserkers_greaves",
+    "boots_of_swiftness",
+    "gluttonous_greaves",
+    "ionian_boots_of_lucidity",
+    "mercurys_treads",
+    "plated_steelcaps",
+    "sorcerers_shoes",
+];
+/// The Boots section's header node. The exe names its own `<tier>_header`.
+const BOOTS_HEADER: &str = "boots_header";
+/// The header's text, which `riot_items_tfm2` ships beside the tier names it
+/// already renames (`tier_header.1` .. `tier_header.5`).
+const BOOTS_HEADER_TEXT: &str = "#asset/base/text/item?tier_header.boots";
+/// The sheet every item icon is cut from, by `rect_tag` = the item's icon key.
+const ICON_SHEET: &str = "asset/base/aseprite_resources/ingame/item_icons_18x18";
+
 /// Written by the click handlers, which get only a reduced context and cannot
 /// touch our state; one slot per menu. `usize::MAX` means "nothing clicked
 /// since last read".
@@ -158,7 +193,7 @@ const CLASSES: [&str; 7] = [
 /// `riot_items_tfm2`'s item -> class table, generated from the `CATEGORY_OF`
 /// compiled into that pack's `item_catalog.rs`. Sorted by slug, for
 /// `binary_search_by_key`. Codes index [`CLASSES`] minus its first entry.
-const CLASS_OF: [(&str, u8); 78] = [
+const CLASS_OF: [(&str, u8); 79] = [
     ("ardent_censer", 5),
     ("atmas_reckoning", 2),
     ("axiom_arc", 0),
@@ -187,6 +222,7 @@ const CLASS_OF: [(&str, u8); 78] = [
     ("frozen_heart", 2),
     ("frozen_mallet", 1),
     ("grezs_spectral_lantern", 3),
+    ("guardian_angel", 1),
     ("guinsoos_rageblade", 4),
     ("hamstringer", 4),
     ("heartsteel", 2),
@@ -710,6 +746,66 @@ fn dump_unresolved(names: &[String]) {
     }
 }
 
+// --- the Boots section ----------------------------------------------------
+
+/// One rebuilt item slot: the exe's `item_info_component/item_slot` template,
+/// named by the item id the way the exe names its own, with the icon and name
+/// the exe would have filled in.
+fn boots_slot_source(id: &str) -> String {
+    format!(
+        "{id}:color_icon_button {{ @\"asset/base/style/main#tertiary_button\"; \
+           width: 117px; height: 124px; rounding: 12; \
+           #{SLOT_ICON}:image {{ width: 64px; height: 64px; anchor_x: 0.5; pivot_x: 0.5; \
+             y: 10px; ignore_event: true; source: \"{ICON_SHEET}\"; rect_tag: \"{id}\"; }} \
+           #name_bg:color {{ width: 115px; height: 41px; anchor_x: 0.5; pivot_x: 0.5; \
+             anchor_y: 1; pivot_y: 1; y: -1px; color: #0f1016ff; \
+             rounding: Individual {{ top_left: 0; top_right: 0; bottom_left: 12; \
+               bottom_right: 12; }} ignore_event: true; }} \
+           #name:label {{ @\"asset/base/style/main#label\"; width: 112px; height: 41px; \
+             anchor_x: 0.5; pivot_x: 0.5; anchor_y: 1; pivot_y: 1; \
+             align_x: Center; align_y: Center; size: 14; \
+             text: \"#asset/base/text/item?{id}.name\"; }} }}"
+    )
+}
+
+/// The Boots section's header: the exe's `item_info_component/tier_header`.
+fn boots_header_source() -> String {
+    format!(
+        "{BOOTS_HEADER}:empty {{ width: 1010px; height: 32px; \
+           #text:label {{ @\"asset/base/style/main#label\"; width: 100%; height: 32px; \
+             size: 16; color: #e8e8e8ff; align_y: Center; text: \"{BOOTS_HEADER_TEXT}\"; }} }}"
+    )
+}
+
+/// Moves every boots slot in the grid into a Boots section after the last tier.
+/// Returns whether it changed the grid, which it does not when no boots are in
+/// it (the pack is not installed) or the grid has not been populated yet.
+///
+/// The originals go first: sibling names are unique, and the rebuilt slots take
+/// the same ones.
+fn regroup_boots(ctx: &mut StableClient<'_>, contents: &str) -> bool {
+    let children = ctx.ui_child_names(contents);
+    if children.iter().any(|name| name == BOOTS_HEADER) {
+        return false;
+    }
+    let present: Vec<&str> = BOOTS
+        .iter()
+        .copied()
+        .filter(|id| children.iter().any(|name| name == id))
+        .collect();
+    if present.is_empty() {
+        return false;
+    }
+    for id in &present {
+        ctx.ui_remove_node(&join(contents, id));
+    }
+    ctx.ui_spawn_source(contents, &boots_header_source());
+    for id in &present {
+        ctx.ui_spawn_source(contents, &boots_slot_source(id));
+    }
+    true
+}
+
 // --- extension ------------------------------------------------------------
 
 #[derive(Default)]
@@ -731,6 +827,8 @@ struct State {
     /// Last `y` written by `place`, so the properties are only rewritten when
     /// the control actually has to move.
     placed: Option<i32>,
+    /// Whether [`regroup_boots`] has rebuilt the current grid's Boots section.
+    regrouped: bool,
 }
 
 struct ItemFilter {
@@ -872,6 +970,7 @@ impl StableExtension for ItemFilter {
             state.classed = false;
             state.applied = None;
             state.placed = None;
+            state.regrouped = false;
         }
 
         if state.list.is_none() {
@@ -934,9 +1033,21 @@ impl StableExtension for ItemFilter {
         // The game repopulates the grid when the tab is reopened, so a changed
         // child count is both when the filters have to be reapplied and when
         // the pack's items could first have appeared.
-        let count = ctx.ui_child_count(&contents).unwrap_or(0);
+        let mut count = ctx.ui_child_count(&contents).unwrap_or(0);
         if state.applied.is_none_or(|(_, applied)| applied != count) {
             Self::detect_classes(&mut state, ctx, &root, &contents);
+            // A repopulated grid has lost the Boots section along with every
+            // other child, so it is rebuilt whenever the header is gone.
+            if state.regrouped && !ctx.ui_exists(&join(&contents, BOOTS_HEADER)) {
+                state.regrouped = false;
+            }
+            // Only for `riot_items_tfm2`'s boots: `classed` is set by its own
+            // legendaries being in the grid, so another mod's item that happens
+            // to be called `boots` is never moved.
+            if state.classed && !state.regrouped && regroup_boots(ctx, &contents) {
+                state.regrouped = true;
+                count = ctx.ui_child_count(&contents).unwrap_or(0);
+            }
         }
 
         let changed = Self::poll(&mut state, ctx, &root);
@@ -991,5 +1102,14 @@ mod tests {
         // A base item and one of the pack's components have no class at all.
         assert!(class_of("iron_blade").is_none());
         assert!(class_of("bf_sword").is_none());
+    }
+
+    #[test]
+    fn boots_section_sources() {
+        assert_eq!(BOOTS[0], "boots");
+        let slot = boots_slot_source("mercurys_treads");
+        assert!(slot.starts_with("mercurys_treads:color_icon_button"));
+        assert!(slot.contains("rect_tag: \"mercurys_treads\""));
+        assert!(boots_header_source().starts_with("boots_header:empty"));
     }
 }
