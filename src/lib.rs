@@ -74,19 +74,24 @@
 //!
 //! # Where item stats come from
 //!
-//! Two sources, because there is no single one:
+//! Three sources, because there is no single one:
 //!
 //! - `setting_get_json(ItemSetting, "")` - the game's item document. Covers the
-//!   30 base items.
+//!   30 base items, but with their base stats: a mod's merge over that document
+//!   does not show through it.
 //! - `config-default.json` shipped by mods that register items in code. Items
 //!   added through `StableMod::add_item` live in an item vtable that no client
 //!   API exposes, so their stats are unreachable at runtime; the Riot pack
 //!   ships its 130 items' stats as data next to its DLL, keyed by the same ids
 //!   and the same stat names. Without this, ~80% of a modded grid is unreadable
 //!   and stays un-grayed.
+//! - `setting/item_setting.item_setting` in any mod whose `mod.override_info`
+//!   merges it over the game's item document - how the Riot pack rebalances
+//!   the base items it renames. Applied last, stat by stat, the way the game
+//!   merges it, so it can take a stat away as well as add one.
 //!
-//! Items resolved by neither source are left lit rather than grayed, so an
-//! unknown item is never wrongly dimmed.
+//! Items resolved by no source are left lit rather than grayed, so an unknown
+//! item is never wrongly dimmed.
 
 use mod_api_stable::*;
 use std::collections::BTreeMap;
@@ -115,6 +120,11 @@ const SEARCH_INTERVAL_FRAMES: u32 = 30;
 const APP_ID: &str = "3009300";
 /// Convention filename for a code mod that ships its item stats as data.
 const MOD_ITEM_CONFIG: &str = "config-default.json";
+/// A mod's merge over the game's item document, relative to its folder, and the
+/// asset its `mod.override_info` has to name for the game to apply it.
+const MOD_ITEM_SETTING: &str = "setting/item_setting.item_setting";
+const MOD_OVERRIDE_INFO: &str = "mod.override_info";
+const ITEM_SETTING_ASSET: &str = "asset/base/setting/item_setting";
 
 /// The item pack whose classes the class menu lists: its folder name under
 /// `mods/` when installed by hand, and its Workshop published file id when
@@ -292,12 +302,21 @@ fn record(items: &mut ItemStats, id: &str, keys: impl Iterator<Item = String>) {
     }
 }
 
-/// The game's item document: `{ "<id>": { "key": "<id>", "stat": { ... } },
-/// "mod_items": [...] }`.
+/// The id a settings entry is filed under.
 ///
 /// The map key and the entry's own `key` agree for all but one base item -
 /// `iron_blade` is `ironsword` - and it is the inner `key` the grid names its
 /// slots by, so that is what we file under.
+fn setting_id<'a>(map_key: &'a str, entry: &'a serde_json::Value) -> &'a str {
+    entry
+        .get("key")
+        .and_then(|value| value.as_str())
+        .filter(|key| !key.is_empty())
+        .unwrap_or(map_key)
+}
+
+/// The game's item document: `{ "<id>": { "key": "<id>", "stat": { ... } },
+/// "mod_items": [...] }`.
 fn absorb_item_setting(document: &str, items: &mut ItemStats) {
     let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
     else {
@@ -330,12 +349,7 @@ fn absorb_item_setting(document: &str, items: &mut ItemStats) {
                 }
             }
         } else {
-            let id = entry
-                .get("key")
-                .and_then(|value| value.as_str())
-                .filter(|key| !key.is_empty())
-                .unwrap_or(id);
-            record(items, id, granted(entry).into_iter());
+            record(items, setting_id(id, entry), granted(entry).into_iter());
         }
     }
 }
@@ -362,6 +376,44 @@ fn absorb_mod_config(document: &str, items: &mut ItemStats) {
             .map(|(key, _)| key.clone());
         record(items, id, keys);
     }
+}
+
+/// A mod's merge over the game's item document - the same shape, usually with
+/// only some items, and possibly only some of their stats. Each stat it names
+/// replaces the one already read, and the rest are left alone, as the game's
+/// merge does. Replacing rather than adding matters: the Riot pack takes
+/// Health off the Null-Magic Mantle (`mystic_cloak`) as well as giving its
+/// Phantom Dancer (`thunderclaw`) movement speed.
+fn absorb_setting_merge(document: &str, items: &mut ItemStats) {
+    let document = document.trim_start_matches('\u{feff}');
+    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
+    else {
+        return;
+    };
+
+    for (id, entry) in &root {
+        let Some(stat) = entry.get("stat").and_then(|stat| stat.as_object()) else {
+            continue;
+        };
+        let granted = items.entry(setting_id(id, entry).to_string()).or_default();
+        for (key, value) in stat {
+            granted.retain(|had| had != key);
+            if nonzero(value) {
+                granted.push(key.clone());
+            }
+        }
+    }
+}
+
+/// Whether a mod's `mod.override_info` merges its item settings over the game's.
+/// Only then does the game apply them - and only then do we, which keeps a
+/// settings file that is merely lying in a folder (an unpacked copy of the base
+/// game's, say) from being read as a mod's.
+fn merges_item_setting(override_info: &str) -> bool {
+    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+        override_info.trim_start_matches('\u{feff}'),
+    )
+    .is_ok_and(|root| root.contains_key(ITEM_SETTING_ASSET))
 }
 
 /// Where subscribed Workshop items live: beside the game install rather than
@@ -420,16 +472,28 @@ fn load_class_file() -> ClassTable {
         .map_or_else(ClassTable::new, |text| parse_class_file(&text))
 }
 
-fn absorb_mod_configs(items: &mut ItemStats) {
-    for root in mod_roots() {
-        let Ok(entries) = std::fs::read_dir(&root) else {
+fn absorb_mod_files(items: &mut ItemStats) {
+    let dirs: Vec<PathBuf> = mod_roots()
+        .into_iter()
+        .filter_map(|root| std::fs::read_dir(root).ok())
+        .flat_map(|entries| entries.flatten().map(|entry| entry.path()))
+        .collect();
+
+    for dir in &dirs {
+        if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_CONFIG)) {
+            absorb_mod_config(&text, items);
+        }
+    }
+    // Merges go last: they are what the game actually applies to the items
+    // they name, so they get the final word on those items' stats.
+    for dir in &dirs {
+        let merged = std::fs::read_to_string(dir.join(MOD_OVERRIDE_INFO))
+            .is_ok_and(|text| merges_item_setting(&text));
+        if !merged {
             continue;
-        };
-        for entry in entries.flatten() {
-            let config = entry.path().join(MOD_ITEM_CONFIG);
-            if let Ok(text) = std::fs::read_to_string(&config) {
-                absorb_mod_config(&text, items);
-            }
+        }
+        if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_SETTING)) {
+            absorb_setting_merge(&text, items);
         }
     }
 }
@@ -972,7 +1036,7 @@ impl StableExtension for ItemFilter {
             if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
                 absorb_item_setting(&document, &mut state.items);
             }
-            absorb_mod_configs(&mut state.items);
+            absorb_mod_files(&mut state.items);
             state.classes = load_class_file();
         }
 
@@ -1104,6 +1168,39 @@ mod tests {
         for (base, slug) in RESKINNED {
             assert!(classes.contains_key(slug), "{base} reskins unclassed {slug}");
         }
+    }
+
+    #[test]
+    fn setting_merge_replaces_stats() {
+        let mut items = ItemStats::new();
+        absorb_item_setting(
+            r#"{ "thunderclaw": { "key": "thunderclaw",
+                   "stat": { "attack_speed_mult": 45, "move_speed_mult": 0 } },
+                 "mystic_cloak": { "key": "mystic_cloak",
+                   "stat": { "hp": 50, "magic_resistance": 20 } },
+                 "iron_blade": { "key": "ironsword", "stat": { "attack": 5 } } }"#,
+            &mut items,
+        );
+        // Partial entries, as a merge may be: only the stats it names change.
+        absorb_setting_merge(
+            r#"{ "thunderclaw": { "stat": { "move_speed_mult": 5 } },
+                 "mystic_cloak": { "stat": { "hp": 0 } },
+                 "iron_blade": { "key": "ironsword", "stat": { "crit_chance": 5 } } }"#,
+            &mut items,
+        );
+        let has = |id: &str, key: &str| items[id].iter().any(|had| had == key);
+        assert!(has("thunderclaw", "attack_speed_mult") && has("thunderclaw", "move_speed_mult"));
+        assert!(!has("mystic_cloak", "hp") && has("mystic_cloak", "magic_resistance"));
+        assert!(has("ironsword", "attack") && has("ironsword", "crit_chance"));
+    }
+
+    #[test]
+    fn only_wired_merges_count() {
+        assert!(merges_item_setting(
+            r#"{ "asset/base/setting/item_setting": { "type": "merge" } }"#
+        ));
+        assert!(!merges_item_setting(r#"{ "asset/base/text/item": {} }"#));
+        assert!(!merges_item_setting("not json"));
     }
 
     #[test]
