@@ -36,21 +36,24 @@
 //! # The class filter
 //!
 //! The second dropdown groups items the way `riot_items_tfm2` does - Assassin,
-//! Fighter, Tank, Mage, Marksman, Support - and that mapping is data nowhere:
-//! it is a table compiled into that pack's `item_catalog.rs`, and neither what
-//! the pack ships (`config-default.json` is the player's balance file, stats
-//! only) nor any client API reaches it. So the table is copied here, generated
-//! from the pack's rather than retyped, and it has to be re-copied when the
-//! pack adds items. An item the copy does not know simply has no class, which
-//! reads as "grey under every class" rather than as a wrong class.
+//! Fighter, Tank, Mage, Marksman, Support. The pack writes that mapping down in
+//! one place, `text/item_classes.json` (`{ "<slug>": "<class>" }`), which its
+//! build compiles in and which also ships with it. No client API reaches the
+//! compiled copy, so the shipped file is read from wherever the pack is
+//! installed (see [`pack_dirs`]), and new items in the pack are classed here
+//! without a change to this mod. Its `Boots`
+//! entries, and any class name not in [`CLASSES`], are skipped. An item the
+//! file does not know simply has no class, which reads as "grey under every
+//! class" rather than as a wrong class; with no file at all (the pack is not
+//! installed, or predates it) nothing is classed and the menu stays hidden.
 //!
 //! Unlike the stat filter, an unknown item is greyed rather than left lit: the
 //! base game's items and the pack's own components have no class at all, so
 //! leaving every unclassified item lit would filter nothing.
 //!
-//! The menu hides itself when the pack is not installed. Every slug in the
-//! table is one of the pack's own items, so a single match in the grid is
-//! proof. The six base items it reskins as its `radiant_` tier are the
+//! The menu hides itself when the pack is not in the grid - a subscribed but
+//! disabled pack still has its file on disk. Every slug in the file is one of
+//! the pack's own items, so a single match in the grid is proof. The six base items it reskins as its `radiant_` tier are the
 //! exception: they are classified, but they cannot count as proof, because
 //! they sit in the grid with or without the pack.
 //!
@@ -87,7 +90,7 @@
 
 use mod_api_stable::*;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -112,6 +115,14 @@ const SEARCH_INTERVAL_FRAMES: u32 = 30;
 const APP_ID: &str = "3009300";
 /// Convention filename for a code mod that ships its item stats as data.
 const MOD_ITEM_CONFIG: &str = "config-default.json";
+
+/// The item pack whose classes the class menu lists: its folder name under
+/// `mods/` when installed by hand, and its Workshop published file id when
+/// subscribed.
+const PACK_ID: &str = "riot_items_tfm2";
+const PACK_WORKSHOP_ID: &str = "3739568852";
+/// The pack's item -> class table, relative to its mod folder.
+const PACK_CLASS_FILE: &str = "text/item_classes.json";
 
 /// The game's own dropdown chevron and its flipped twin. Both sprites are
 /// 8.78x5.06, so swapping one for the other never moves or resizes the caret.
@@ -179,7 +190,8 @@ const FILTERS: [(&str, &[&str]); 12] = [
 ];
 
 /// The class dropdown, in order. Index 0 clears the filter; every later index
-/// is a class code in [`CLASS_OF`], offset by one.
+/// is a class code, offset by one. The names are what the pack's class file
+/// spells them as.
 const CLASSES: [&str; 7] = [
     "All Classes",
     "Assassin",
@@ -190,90 +202,8 @@ const CLASSES: [&str; 7] = [
     "Support",
 ];
 
-/// `riot_items_tfm2`'s item -> class table, generated from the `CATEGORY_OF`
-/// compiled into that pack's `item_catalog.rs`. Sorted by slug, for
-/// `binary_search_by_key`. Codes index [`CLASSES`] minus its first entry.
-const CLASS_OF: [(&str, u8); 79] = [
-    ("ardent_censer", 5),
-    ("atmas_reckoning", 2),
-    ("axiom_arc", 0),
-    ("bandlepipes", 5),
-    ("bastionbreaker", 0),
-    ("black_cleaver", 1),
-    ("blackfire_torch", 3),
-    ("blade_of_the_ruined_king", 4),
-    ("bloodletters_curse", 3),
-    ("bloodsong", 5),
-    ("bloodthirster", 1),
-    ("chempunk_chainsword", 1),
-    ("chemtech_putrifier", 5),
-    ("cloak_of_starry_night", 2),
-    ("collector", 0),
-    ("dead_mans_plate", 2),
-    ("deathblade", 4),
-    ("deaths_dance", 1),
-    ("diamond_tipped_spear", 4),
-    ("dragons_claw", 2),
-    ("dusk_and_dawn", 3),
-    ("echoes_of_helia", 5),
-    ("eclipse", 1),
-    ("experimental_hexplate", 1),
-    ("feral_flare", 1),
-    ("frozen_heart", 2),
-    ("frozen_mallet", 1),
-    ("grezs_spectral_lantern", 3),
-    ("guardian_angel", 1),
-    ("guinsoos_rageblade", 4),
-    ("hamstringer", 4),
-    ("heartsteel", 2),
-    ("hextech_gunblade", 3),
-    ("hubris", 0),
-    ("infinity_edge", 4),
-    ("jaksho_the_protean", 2),
-    ("kraken_slayer", 4),
-    ("liandrys_torment", 3),
-    ("locket_of_the_iron_solari", 5),
-    ("lord_dominiks_regards", 4),
-    ("ludens_tempest", 3),
-    ("malignance", 3),
-    ("mirage_blade", 4),
-    ("morellonomicon", 3),
-    ("mortal_reminder", 4),
-    ("nashors_tooth", 3),
-    ("night_harvester", 3),
-    ("opportunity", 0),
-    ("overlords_bloodmail", 1),
-    ("phantom_dancer", 4),
-    ("protectors_vow", 2),
-    ("protoplasm_harness", 5),
-    ("rabadons_deathcap", 3),
-    ("randuins_omen", 2),
-    ("ravenous_hydra", 1),
-    ("riftmaker", 3),
-    ("rite_of_ruin", 3),
-    ("rylais_crystal_scepter", 3),
-    ("serpents_fang", 0),
-    ("seryldas_grudge", 0),
-    ("shadowflame", 3),
-    ("spear_of_shojin", 1),
-    ("spirit_visage", 2),
-    ("steraks_gage", 1),
-    ("stormrazor", 4),
-    ("stormsurge", 3),
-    ("sundered_sky", 1),
-    ("sunfire_cape", 2),
-    ("sword_of_blossoming_dawn", 5),
-    ("terminus", 4),
-    ("thornmail", 2),
-    ("trinity_force", 1),
-    ("unending_despair", 2),
-    ("void_staff", 3),
-    ("voltaic_cyclosword", 0),
-    ("warmogs_armor", 2),
-    ("wits_end", 4),
-    ("yun_tal_wildarrows", 4),
-    ("zekes_herald", 5),
-];
+/// item slug -> class code, which indexes [`CLASSES`] minus its first entry.
+type ClassTable = BTreeMap<String, u8>;
 
 /// The six base game items the pack reskins as its `radiant_` tier, mapped to
 /// the slug the class table knows them by. They keep their base ids, so they
@@ -288,27 +218,22 @@ const RESKINNED: [(&str, &str); 6] = [
     ("warlords_final_judgement", "bloodthirster"),
 ];
 
-fn class_of_slug(slug: &str) -> Option<u8> {
-    CLASS_OF
-        .binary_search_by_key(&slug, |(key, _)| *key)
-        .ok()
-        .map(|index| CLASS_OF[index].1)
-}
-
 /// The class of an item the pack itself adds - and so also the test for whether
 /// the pack is installed at all, since every slug in the table is one of its
 /// items. A `radiant_` upgrade carries its base item's id under the prefix.
-fn pack_class(id: &str) -> Option<u8> {
-    class_of_slug(id.strip_prefix("radiant_").unwrap_or(id))
+fn pack_class(classes: &ClassTable, id: &str) -> Option<u8> {
+    classes
+        .get(id.strip_prefix("radiant_").unwrap_or(id))
+        .copied()
 }
 
 /// The class of any item in the grid, the reskinned base items included.
-fn class_of(id: &str) -> Option<u8> {
-    pack_class(id).or_else(|| {
+fn class_of(classes: &ClassTable, id: &str) -> Option<u8> {
+    pack_class(classes, id).or_else(|| {
         RESKINNED
             .iter()
             .find(|(key, _)| *key == id)
-            .and_then(|(_, slug)| class_of_slug(slug))
+            .and_then(|(_, slug)| classes.get(*slug).copied())
     })
 }
 
@@ -439,18 +364,60 @@ fn absorb_mod_config(document: &str, items: &mut ItemStats) {
     }
 }
 
+/// Where subscribed Workshop items live: beside the game install rather than
+/// inside it, one folder per published file id.
+fn workshop_root(game: &Path) -> Option<PathBuf> {
+    // ...steamapps/common/<game> -> ...steamapps/workshop/content/<app id>
+    let steamapps = game.parent()?.parent()?;
+    Some(steamapps.join("workshop").join("content").join(APP_ID))
+}
+
 /// Mod folders to look in: the game's own `mods/`, and subscribed Workshop
-/// items, which live beside the game install rather than inside it.
+/// items.
 fn mod_roots() -> Vec<PathBuf> {
     let Ok(cwd) = std::env::current_dir() else {
         return Vec::new();
     };
     let mut roots = vec![cwd.join("mods")];
-    // ...steamapps/common/<game> -> ...steamapps/workshop/content/<app id>
-    if let Some(steamapps) = cwd.parent().and_then(|common| common.parent()) {
-        roots.push(steamapps.join("workshop").join("content").join(APP_ID));
-    }
+    roots.extend(workshop_root(&cwd));
     roots
+}
+
+/// Where the item pack can be installed: by hand under its mod id, or from the
+/// Workshop under its published file id. The manual copy comes first - with
+/// both present, it is the one being worked on.
+fn pack_dirs() -> Vec<PathBuf> {
+    let Ok(cwd) = std::env::current_dir() else {
+        return Vec::new();
+    };
+    let mut dirs = vec![cwd.join("mods").join(PACK_ID)];
+    dirs.extend(workshop_root(&cwd).map(|root| root.join(PACK_WORKSHOP_ID)));
+    dirs
+}
+
+/// The pack's class file: `{ "<slug>": "<class>" }`. Entries whose class is
+/// not one the menu lists - `Boots`, chiefly - are dropped.
+fn parse_class_file(document: &str) -> ClassTable {
+    let document = document.trim_start_matches('\u{feff}');
+    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
+    else {
+        return ClassTable::new();
+    };
+    root.iter()
+        .filter_map(|(slug, class)| {
+            let class = class.as_str()?;
+            let code = CLASSES[1..].iter().position(|name| *name == class)?;
+            Some((slug.clone(), code as u8))
+        })
+        .collect()
+}
+
+/// The first class file found in [`pack_dirs`], or an empty table.
+fn load_class_file() -> ClassTable {
+    pack_dirs()
+        .into_iter()
+        .find_map(|dir| std::fs::read_to_string(dir.join(PACK_CLASS_FILE)).ok())
+        .map_or_else(ClassTable::new, |text| parse_class_file(&text))
 }
 
 fn absorb_mod_configs(items: &mut ItemStats) {
@@ -687,6 +654,7 @@ fn place(ctx: &StableClient<'_>, host: &str, root: &str) -> Option<i32> {
 /// unknowns are treated as opposites.
 fn apply(
     items: &ItemStats,
+    classes: &ClassTable,
     ctx: &mut StableClient<'_>,
     contents: &str,
     keys: &[&str],
@@ -711,7 +679,7 @@ fn apply(
                     false
                 }
             };
-        let class_dim = class.is_some_and(|wanted| class_of(&child) != Some(wanted));
+        let class_dim = class.is_some_and(|wanted| class_of(classes, &child) != Some(wanted));
         let dim = stat_dim || class_dim;
 
         ctx.ui_set_properties(&slot, if dim { DIM_SLOT } else { LIT_SLOT });
@@ -819,6 +787,8 @@ struct State {
     /// Chosen option per menu, indexed by [`STAT`] / [`CLASS`].
     current: [usize; MENU_COUNT],
     items: ItemStats,
+    /// The pack's item -> class table, empty when its file was not found.
+    classes: ClassTable,
     loaded: bool,
     /// Whether the item pack that defines the classes is installed, which is
     /// also whether the class menu is on screen.
@@ -878,12 +848,12 @@ impl ItemFilter {
 
     /// Shows or hides the class menu, which only earns its place when the pack
     /// that defines the classes is installed. The grid is the test: every slug
-    /// in [`CLASS_OF`] is one of the pack's own items.
+    /// in its class file is one of the pack's own items.
     fn detect_classes(state: &mut State, ctx: &mut StableClient<'_>, root: &str, contents: &str) {
         let classed = ctx
             .ui_child_names(contents)
             .iter()
-            .any(|name| pack_class(name).is_some());
+            .any(|name| pack_class(&state.classes, name).is_some());
         if classed == state.classed {
             return;
         }
@@ -995,13 +965,15 @@ impl StableExtension for ItemFilter {
         }
         let host = parent_of(&list).to_string();
 
-        // Neither source can change while the game runs, so read them once.
+        // None of these sources can change while the game runs, so read them
+        // once.
         if !state.loaded {
             state.loaded = true;
             if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
                 absorb_item_setting(&document, &mut state.items);
             }
             absorb_mod_configs(&mut state.items);
+            state.classes = load_class_file();
         }
 
         if !state.built {
@@ -1055,7 +1027,7 @@ impl StableExtension for ItemFilter {
         if changed || state.applied != Some((state.current, count)) {
             let keys = FILTERS[state.current[STAT]].1;
             let class = class_filter(state.current[CLASS]);
-            apply(&state.items, ctx, &contents, keys, class);
+            apply(&state.items, &state.classes, ctx, &contents, keys, class);
             state.applied = Some((state.current, count));
         }
     }
@@ -1079,29 +1051,59 @@ declare_stable_mod!(init);
 mod tests {
     use super::*;
 
-    /// `class_of_slug` binary searches, and the table is a copy maintained by
-    /// hand, so a re-copy that lands out of order has to fail loudly rather
-    /// than silently mislaying items.
+    const SAMPLE: &str = "\u{feff}{ \"hubris\": \"Assassin\", \"thornmail\": \"Tank\", \
+         \"plated_steelcaps\": \"Boots\", \"odd\": \"Jungler\", \"bad\": 3 }";
+
     #[test]
-    fn class_table_is_sorted() {
-        assert!(CLASS_OF.windows(2).all(|pair| pair[0].0 < pair[1].0));
-        assert!(CLASS_OF
-            .iter()
-            .all(|(_, code)| (*code as usize) < CLASSES.len() - 1));
+    fn class_file_parses() {
+        let classes = parse_class_file(SAMPLE);
+        // Boots, a class the menu does not list, and a non-string are dropped.
+        assert_eq!(classes.len(), 2);
+        assert_eq!(classes.get("hubris"), Some(&0));
+        assert_eq!(classes.get("thornmail"), Some(&2));
+        assert!(parse_class_file("not json").is_empty());
     }
 
     #[test]
     fn classes_resolve() {
+        let classes = parse_class_file(SAMPLE);
         // The pack's own item, its radiant upgrade, and a base item the pack
         // reskins as a radiant - the last classified, but never proof the pack
         // is installed.
-        assert_eq!(class_of("hubris"), Some(0));
-        assert_eq!(class_of("radiant_thornmail"), Some(2));
-        assert_eq!(class_of("impregnable_fortress"), Some(2));
-        assert!(pack_class("impregnable_fortress").is_none());
+        assert_eq!(class_of(&classes, "hubris"), Some(0));
+        assert_eq!(class_of(&classes, "radiant_thornmail"), Some(2));
+        assert_eq!(class_of(&classes, "impregnable_fortress"), Some(2));
+        assert!(pack_class(&classes, "impregnable_fortress").is_none());
         // A base item and one of the pack's components have no class at all.
-        assert!(class_of("iron_blade").is_none());
-        assert!(class_of("bf_sword").is_none());
+        assert!(class_of(&classes, "iron_blade").is_none());
+        assert!(class_of(&classes, "bf_sword").is_none());
+    }
+
+    /// The pack's real class file, when it is checked out beside this repo. A
+    /// class the pack adds would be silently dropped by the parser, so it has
+    /// to be caught here and given a row in [`CLASSES`].
+    #[test]
+    fn pack_class_file_is_covered() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(PACK_ID)
+            .join(PACK_CLASS_FILE);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let root: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap();
+        for (slug, class) in &root {
+            let class = class.as_str().unwrap();
+            assert!(
+                class == "Boots" || CLASSES[1..].contains(&class),
+                "{slug}: class {class:?} has no row in CLASSES"
+            );
+        }
+        let classes = parse_class_file(&text);
+        for (base, slug) in RESKINNED {
+            assert!(classes.contains_key(slug), "{base} reskins unclassed {slug}");
+        }
     }
 
     #[test]
