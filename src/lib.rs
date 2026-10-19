@@ -110,9 +110,9 @@
 //! the components' side, as `previous_tier`.
 //!
 //! The exe says which item the card shows only by its name, so the item is
-//! found by name: in English from the game's own text, and in every language
-//! a mod's `text/item.i18n` gives. An item it cannot name, or price, keeps
-//! the exe's own number.
+//! found by name, matched against the names on the grid's own slots - which
+//! are in the player's language, whatever it is, and each slot is named after
+//! its item. An item it cannot name, or price, keeps the exe's own number.
 
 use mod_api_stable::*;
 use std::collections::BTreeMap;
@@ -127,8 +127,10 @@ const MOD_ID: &str = "item_scroller_tfm2";
 /// root prefix is not part of the stable contract, so we search for the node.
 const LIST_NODE: &str = "item_list";
 const CONTENTS_NODE: &str = "contents";
-/// The item art inside a slot, from the `item_slot` template.
+/// The item art and the name label inside a slot, from the `item_slot`
+/// template.
 const SLOT_ICON: &str = "icon";
+const SLOT_NAME: &str = "name";
 
 const ROOT_NODE: &str = "item_filter";
 /// The card column, and the node the control keeps itself pinned above.
@@ -150,9 +152,6 @@ const ITEM_SETTING_ASSET: &str = "asset/base/setting/item_setting";
 /// Convention filename for a code mod that writes its items' prices and build
 /// paths out as data: `{ "<id>": { "price", "previous_tier", "next_tier" } }`.
 const MOD_ITEM_PATHS: &str = "item_recipes.json";
-/// A mod's merge over the game's item text, and the asset that wires it in.
-const MOD_ITEM_TEXT: &str = "text/item.i18n";
-const ITEM_TEXT_ASSET: &str = "asset/base/text/item";
 /// How a label refers to an item's name for the game to resolve.
 const ITEM_NAME_PREFIX: &str = "#asset/base/text/item?";
 const ITEM_NAME_SUFFIX: &str = ".name";
@@ -566,15 +565,6 @@ fn absorb_mod_paths(dirs: &[PathBuf], entries: &mut PathEntries) {
     written.sort_by_key(|(modified, _)| *modified);
     for (_, text) in &written {
         absorb_path_file(text, entries);
-    }
-}
-
-/// Item names from mods' item text, in every language it gives.
-fn absorb_mod_names(dirs: &[PathBuf], names: &mut ItemNames) {
-    for dir in dirs {
-        if let Some(text) = merged_file(dir, ITEM_TEXT_ASSET, MOD_ITEM_TEXT) {
-            absorb_item_names(&text, names);
-        }
     }
 }
 
@@ -1032,41 +1022,23 @@ fn price_text((low, high): (u32, u32)) -> String {
     }
 }
 
-/// A mod's item text: `{ "<lang>": { "<id>": { "name": "..." }, ... } }`.
-/// Every language is read, since the card names the item in the player's.
-fn absorb_item_names(document: &str, names: &mut ItemNames) {
-    let document = document.trim_start_matches('\u{feff}');
-    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
-    else {
-        return;
-    };
-    for language in root.values().filter_map(|language| language.as_object()) {
-        for (id, entry) in language {
-            let Some(name) = entry.get("name").and_then(|name| name.as_str()) else {
-                continue;
-            };
-            let name = name.trim();
-            if !name.is_empty() {
-                names
-                    .entry(name.to_string())
-                    .or_insert_with(|| id.clone());
-            }
-        }
-    }
-}
-
-/// Every priced item's name in the game's own text. `i18n` only ever answers
-/// in English, so the other languages come from mods' item text alone.
-fn absorb_game_names(ctx: &StableClient<'_>, paths: &Paths, names: &mut ItemNames) {
-    for id in paths.keys() {
-        let name = ctx.i18n(&format!("{ITEM_NAME_PREFIX}{id}{ITEM_NAME_SUFFIX}"));
-        let Some(name) = name.filter(|name| !name.trim().is_empty() && !name.starts_with('#'))
-        else {
+/// Every slot's name in the grid, by the item id the slot is named after. The
+/// exe fills those labels the way it fills the card's, in the player's
+/// language, so whatever the card says is in here. Nothing else knows the game
+/// items' names outside English: `i18n` only ever answers in English.
+///
+/// Read before [`regroup_boots`] replaces the exe's boots slots, whose rebuilt
+/// labels hold only a reference. Names are added, never cleared, so a name
+/// read from the exe's slot outlives that slot.
+fn index_grid_names(ctx: &StableClient<'_>, contents: &str, names: &mut ItemNames) {
+    for id in ctx.ui_child_names(contents) {
+        let Some(name) = ctx.ui_text(&join(&join(contents, &id), SLOT_NAME)) else {
             continue;
         };
-        names
-            .entry(name.trim().to_string())
-            .or_insert_with(|| id.clone());
+        let name = name.trim();
+        if !name.is_empty() {
+            names.insert(name.to_string(), id);
+        }
     }
 }
 
@@ -1159,8 +1131,8 @@ struct ItemFilter {
 }
 
 impl ItemFilter {
-    /// Reads every source of item stats, classes, prices and names. None of
-    /// them can change while the game runs, so this happens once.
+    /// Reads every source of item stats, classes and prices. None of them can
+    /// change while the game runs, so this happens once.
     fn load(state: &mut State, ctx: &StableClient<'_>) {
         let mut entries = PathEntries::new();
         if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
@@ -1173,8 +1145,6 @@ impl ItemFilter {
         absorb_mod_files(&dirs, &mut state.items);
         absorb_mod_paths(&dirs, &mut entries);
         state.paths = link(&entries);
-        absorb_game_names(ctx, &state.paths, &mut state.names);
-        absorb_mod_names(&dirs, &mut state.names);
         state.classes = load_class_file();
     }
 
@@ -1375,6 +1345,8 @@ impl StableExtension for ItemFilter {
         let mut count = ctx.ui_child_count(&contents).unwrap_or(0);
         if state.applied.is_none_or(|(_, applied)| applied != count) {
             Self::detect_classes(&mut state, ctx, &root, &contents);
+            // Before the boots are regrouped, while their slots are the exe's.
+            index_grid_names(ctx, &contents, &mut state.names);
             // A repopulated grid has lost the Boots section along with every
             // other child, so it is rebuilt whenever the header is gone.
             if state.regrouped && !ctx.ui_exists(&join(&contents, BOOTS_HEADER)) {
@@ -1506,7 +1478,6 @@ mod tests {
             ITEM_SETTING_ASSET
         ));
         assert!(!merges(r#"{ "asset/base/text/item": {} }"#, ITEM_SETTING_ASSET));
-        assert!(merges(r#"{ "asset/base/text/item": {} }"#, ITEM_TEXT_ASSET));
         assert!(!merges("not json", ITEM_SETTING_ASSET));
     }
 
@@ -1574,18 +1545,17 @@ mod tests {
 
     #[test]
     fn items_are_found_by_name() {
-        let mut names = ItemNames::new();
-        absorb_item_names(
-            "\u{feff}{ \"en\": { \"info\": { \"price\": \"Price\" }, \"tier\": \"Tier {Tier}\", \
-               \"bastionbreaker\": { \"name\": \"Bastionbreaker \" } }, \
-             \"pt-BR\": { \"bastionbreaker\": { \"name\": \"Quebra-Bastião\" } } }",
-            &mut names,
-        );
+        // As the grid gives them: whatever language its labels are in.
+        let names: ItemNames = [
+            ("Quebra-Bastião".to_string(), "bastionbreaker".to_string()),
+            ("Long Sword".to_string(), "ironsword".to_string()),
+        ]
+        .into();
         let paths: Paths = [("bastionbreaker".to_string(), (650, Vec::new()))].into();
         let named = |label: &str| item_named(&paths, &names, label);
 
-        assert_eq!(named("Bastionbreaker"), Some("bastionbreaker"));
-        assert_eq!(named("Quebra-Bastião"), Some("bastionbreaker"));
+        assert_eq!(named("Quebra-Bastião "), Some("bastionbreaker"));
+        assert_eq!(named("Long Sword"), Some("ironsword"));
         assert_eq!(
             named("#asset/base/text/item?bastionbreaker.name"),
             Some("bastionbreaker")
