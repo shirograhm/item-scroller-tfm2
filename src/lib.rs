@@ -102,12 +102,15 @@
 //! An item's `previous_tier` items are alternatives, any one of them, which is
 //! how the Riot pack sums what a held item has cost in a match.
 //!
-//! The paths come from the same places as the stats - the game's item
-//! document for its own thirty, and mods' merges over it last - plus
-//! `item_recipes.json`, which a code mod writes as its items register (the
-//! Riot pack does). Nothing else reaches those items' paths, and the links
-//! from the game's items to the Riot pack's components are only written on
-//! the components' side, as `previous_tier`.
+//! The paths come from the game's item settings, and from mods' merges over
+//! them last. The client's copy of those settings has only the game's own
+//! thirty, so the management server's is read too ([`ServerItems`]): it holds
+//! every mod's items under `mod_items`, with their prices and `next_tier`, and
+//! the game has written each one into the `next_tier` of the items it is
+//! built from - the only place the links from the game's items to a mod's
+//! components are written out, since a mod names them as its own item's
+//! `previous_tier`. Links add up across the sources rather than replace, so a
+//! merge file listing a game item's own `next_tier` cannot cut them.
 //!
 //! The exe says which item the card shows only by its name, so the item is
 //! found by name, matched against the names on the grid's own slots - which
@@ -117,7 +120,6 @@
 use mod_api_stable::*;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -127,6 +129,11 @@ const MOD_ID: &str = "item_scroller_tfm2";
 /// root prefix is not part of the stable contract, so we search for the node.
 const LIST_NODE: &str = "item_list";
 const CONTENTS_NODE: &str = "contents";
+/// Where the exe mounts the screen a tab switches to (`main.contents.<screen>`),
+/// and the grid's path under that screen's root. Neither is in the stable
+/// contract either, so they only make a fast path in front of the search.
+const SCREEN_MOUNT: &str = "main.contents";
+const SCREEN_LIST: &str = "data.item_list";
 /// The item art and the name label inside a slot, from the `item_slot`
 /// template.
 const SLOT_ICON: &str = "icon";
@@ -149,9 +156,9 @@ const MOD_ITEM_CONFIG: &str = "config-default.json";
 const MOD_ITEM_SETTING: &str = "setting/item_setting.item_setting";
 const MOD_OVERRIDE_INFO: &str = "mod.override_info";
 const ITEM_SETTING_ASSET: &str = "asset/base/setting/item_setting";
-/// Convention filename for a code mod that writes its items' prices and build
-/// paths out as data: `{ "<id>": { "price", "previous_tier", "next_tier" } }`.
-const MOD_ITEM_PATHS: &str = "item_recipes.json";
+/// What the client sends for the server to read its item settings now, rather
+/// than at its next management tick, which only comes once the calendar moves.
+const SERVER_COMMAND: &str = "item_scroller_tfm2.read_items";
 /// How a label refers to an item's name for the game to resolve.
 const ITEM_NAME_PREFIX: &str = "#asset/base/text/item?";
 const ITEM_NAME_SUFFIX: &str = ".name";
@@ -302,6 +309,30 @@ fn join(path: &str, child: &str) -> String {
 
 fn parent_of(path: &str) -> &str {
     path.rsplit_once('.').map_or("", |(head, _)| head)
+}
+
+/// The grid of an Item Info screen mounted at [`SCREEN_MOUNT`] or one of
+/// `mounts`. One level down from each, so cheap enough for every frame: the
+/// screen is found the frame it opens, and the Boots section and the menus are
+/// in place before it is seen. The full [`find_node`] search only runs every
+/// [`SEARCH_INTERVAL_FRAMES`], and the grid used to be drawn as the exe built
+/// it for that long before it was regrouped under the player's eyes.
+fn find_mounted(ctx: &StableClient<'_>, mounts: &[String]) -> Option<String> {
+    std::iter::once(SCREEN_MOUNT)
+        .chain(mounts.iter().map(String::as_str))
+        .flat_map(|mount| {
+            ctx.ui_child_names(mount)
+                .into_iter()
+                .map(move |screen| join(&join(mount, &screen), SCREEN_LIST))
+        })
+        .find(|list| ctx.ui_exists(list))
+}
+
+/// Where the screen holding the grid at `list` is mounted, for
+/// [`find_mounted`] to look next time: the item builds screen's popup, say.
+fn mount_of(list: &str) -> Option<&str> {
+    let screen = list.strip_suffix(SCREEN_LIST)?.strip_suffix('.')?;
+    Some(parent_of(screen))
 }
 
 fn find_node(ctx: &StableClient<'_>, path: &str, target: &str, depth: usize) -> Option<String> {
@@ -544,27 +575,12 @@ fn absorb_mod_files(dirs: &[PathBuf], items: &mut ItemStats) {
     }
 }
 
-/// Prices and build paths from mods: their merges over the game's item
-/// document, then the paths code mods write out. A mod installed both by hand
-/// and from the Workshop can have written two, so those are read oldest first
-/// and the copy that wrote last has the final word.
+/// Prices and build paths from mods' merges over the game's item document.
 fn absorb_mod_paths(dirs: &[PathBuf], entries: &mut PathEntries) {
     for dir in dirs {
         if let Some(text) = merged_file(dir, ITEM_SETTING_ASSET, MOD_ITEM_SETTING) {
             each_setting_item(&text, |id, entry| absorb_path_entry(entries, id, entry));
         }
-    }
-    let mut written: Vec<(SystemTime, String)> = dirs
-        .iter()
-        .filter_map(|dir| {
-            let file = dir.join(MOD_ITEM_PATHS);
-            let modified = std::fs::metadata(&file).and_then(|meta| meta.modified()).ok()?;
-            Some((modified, std::fs::read_to_string(&file).ok()?))
-        })
-        .collect();
-    written.sort_by_key(|(modified, _)| *modified);
-    for (_, text) in &written {
-        absorb_path_file(text, entries);
     }
 }
 
@@ -910,12 +926,12 @@ fn regroup_boots(ctx: &mut StableClient<'_>, contents: &str) -> bool {
 
 // --- the total price ------------------------------------------------------
 
-/// What is known of one item's place in the build paths. A source may give
-/// any of the fields, and each one it gives replaces what was read before.
+/// What is known of one item's place in the build paths. A price a source
+/// gives replaces the one read before; the items it is upgraded into add up
+/// across sources, since no one source has them all.
 #[derive(Default)]
 struct PathEntry {
     price: Option<u32>,
-    previous: Vec<String>,
     next: Vec<String>,
 }
 
@@ -928,58 +944,33 @@ type Paths = BTreeMap<String, (u32, Vec<String>)>;
 /// An item's name, in any language read -> its id.
 type ItemNames = BTreeMap<String, String>;
 
-/// One item's `price`, `previous_tier` and `next_tier`, from any source that
-/// gives them: the game's item document, a mod's merge over it, or a code
-/// mod's [`MOD_ITEM_PATHS`].
+/// One item's `price` and `next_tier`, from any copy of the item settings or a
+/// mod's merge over them.
 fn absorb_path_entry(entries: &mut PathEntries, id: &str, entry: &serde_json::Value) {
-    let ids = |field: &str| {
-        entry.get(field).and_then(|value| value.as_array()).map(|list| {
-            list.iter()
-                .filter_map(|id| id.as_str())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-    };
     let known = entries.entry(id.to_string()).or_default();
     if let Some(price) = entry.get("price").and_then(|price| price.as_f64()) {
         known.price = Some(price.max(0.0).round() as u32);
     }
-    if let Some(previous) = ids("previous_tier") {
-        known.previous = previous;
-    }
-    if let Some(next) = ids("next_tier") {
-        known.next = next;
-    }
-}
-
-/// A code mod's [`MOD_ITEM_PATHS`]: `{ "<id>": { "price": 650,
-/// "previous_tier": [...], "next_tier": [...] } }`.
-fn absorb_path_file(document: &str, entries: &mut PathEntries) {
-    let document = document.trim_start_matches('\u{feff}');
-    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
-    else {
-        return;
-    };
-    for (id, entry) in &root {
-        absorb_path_entry(entries, id, entry);
+    let next = entry.get("next_tier").and_then(|next| next.as_array());
+    for next in next.into_iter().flatten().filter_map(|next| next.as_str()) {
+        if !known.next.iter().any(|known| known == next) {
+            known.next.push(next.to_string());
+        }
     }
 }
 
-/// Joins every link at both ends. The game's items name only what they are
-/// upgraded into, and a mod's component built from one of them names only
-/// what it is built from, so an item's sources are its own `previous_tier`
-/// plus every item whose `next_tier` names it. A link to an item with no price,
-/// such as one from a mod that is not installed, leads nowhere and is dropped.
+/// Turns every item's `next_tier` round, into what each item is built from:
+/// every item whose `next_tier` names it. A link to or from an item with no
+/// price, such as one from a mod that is not installed, leads nowhere and is
+/// dropped.
 fn link(entries: &PathEntries) -> Paths {
     let mut paths: Paths = entries
         .iter()
         .filter_map(|(id, entry)| Some((id.clone(), (entry.price?, Vec::new()))))
         .collect();
-    let links = entries.iter().flat_map(|(id, entry)| {
-        let from = entry.previous.iter().map(move |previous| (previous, id));
-        let into = entry.next.iter().map(move |next| (id, next));
-        from.chain(into)
-    });
+    let links = entries
+        .iter()
+        .flat_map(|(id, entry)| entry.next.iter().map(move |next| (id, next)));
     for (from, into) in links {
         if !paths.contains_key(from) {
             continue;
@@ -1094,6 +1085,72 @@ fn show_total(state: &mut State, ctx: &mut StableClient<'_>, host: &str) {
     state.price = Some(PriceShown { name, game, shown });
 }
 
+// --- the server's item settings -------------------------------------------
+
+/// The management server's item settings, as last read. The server runs in
+/// the client's process, so the two halves of this mod share it.
+static SERVER_ITEMS: Mutex<Option<String>> = Mutex::new(None);
+/// How many times [`SERVER_ITEMS`] has been read, for the client to notice a
+/// new one by.
+static SERVER_ITEMS_READ: AtomicUsize = AtomicUsize::new(0);
+/// Whether the running server's settings have been read yet.
+static SERVER_READ: AtomicBool = AtomicBool::new(false);
+
+/// Reads the server's item settings into [`SERVER_ITEMS`]. A server that has
+/// not loaded them yet answers with nothing, or with items that all cost 0,
+/// and that read does not count.
+fn read_server_items(ctx: &StableServerCtx<'_>) {
+    let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") else {
+        return;
+    };
+    let mut priced = false;
+    each_setting_item(&document, |_, entry| {
+        priced |= entry
+            .get("price")
+            .and_then(|price| price.as_f64())
+            .is_some_and(|price| price > 0.0);
+    });
+    if !priced {
+        return;
+    }
+    if let Ok(mut items) = SERVER_ITEMS.lock() {
+        *items = Some(document);
+    }
+    SERVER_ITEMS_READ.fetch_add(1, Ordering::Relaxed);
+    SERVER_READ.store(true, Ordering::Relaxed);
+}
+
+/// Reads the server's item settings: as each save starts its server, at every
+/// management tick until that has worked, and whenever Item Info asks
+/// ([`SERVER_COMMAND`]) - since the ticks only run while the calendar moves,
+/// a save just loaded would otherwise have none until the player proceeds.
+struct ServerItems;
+
+impl StableServerExtension for ServerItems {
+    fn on_server_start(&self, ctx: &mut StableServerCtx<'_>) {
+        SERVER_READ.store(false, Ordering::Relaxed);
+        read_server_items(ctx);
+    }
+
+    fn before_management_tick(&self, ctx: &mut StableServerCtx<'_>) {
+        if !SERVER_READ.load(Ordering::Relaxed) {
+            read_server_items(ctx);
+        }
+    }
+
+    fn handle_command(
+        &self,
+        ctx: &mut StableServerCtx<'_>,
+        command: &StableCommand<'_>,
+    ) -> CommandResultV1 {
+        if command.command != SERVER_COMMAND {
+            return CommandResultV1::Pass;
+        }
+        read_server_items(ctx);
+        CommandResultV1::Handled
+    }
+}
+
 // --- extension ------------------------------------------------------------
 
 #[derive(Default)]
@@ -1101,6 +1158,9 @@ struct State {
     /// Path of `item_list`, once found; cleared when the screen goes away.
     list: Option<String>,
     search_wait: u32,
+    /// Places other than [`SCREEN_MOUNT`] the search has found the screen
+    /// mounted at. Kept for the session, since the exe reuses them.
+    mounts: Vec<String>,
     built: bool,
     /// Which menu's panel is down, if any. Only one is ever open.
     open: Option<usize>,
@@ -1121,6 +1181,10 @@ struct State {
     regrouped: bool,
     /// Every item's price and what it is built from, for [`show_total`].
     paths: Paths,
+    /// The [`SERVER_ITEMS_READ`] count `paths` was made from.
+    paths_read: usize,
+    /// Whether Item Info, while open, has asked the server for its settings.
+    asked_server: bool,
     names: ItemNames,
     /// What [`show_total`] last put on the card.
     price: Option<PriceShown>,
@@ -1131,21 +1195,37 @@ struct ItemFilter {
 }
 
 impl ItemFilter {
-    /// Reads every source of item stats, classes and prices. None of them can
-    /// change while the game runs, so this happens once.
+    /// Reads every source of item stats and classes. None of them can change
+    /// while the game runs, so this happens once.
     fn load(state: &mut State, ctx: &StableClient<'_>) {
-        let mut entries = PathEntries::new();
         if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
             absorb_item_setting(&document, &mut state.items);
-            each_setting_item(&document, |id, entry| {
-                absorb_path_entry(&mut entries, id, entry)
-            });
         }
-        let dirs = mod_dirs();
-        absorb_mod_files(&dirs, &mut state.items);
-        absorb_mod_paths(&dirs, &mut entries);
-        state.paths = link(&entries);
+        absorb_mod_files(&mod_dirs(), &mut state.items);
         state.classes = load_class_file();
+    }
+
+    /// Makes the build paths from every copy of the item settings: the
+    /// client's, the server's as last read, and mods' merges last, whose
+    /// prices are the ones matches are played with.
+    fn load_paths(state: &mut State, ctx: &StableClient<'_>) {
+        let mut entries = PathEntries::new();
+        let mut absorb = |document: &str| {
+            each_setting_item(document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            })
+        };
+        if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
+            absorb(&document);
+        }
+        state.paths_read = SERVER_ITEMS_READ.load(Ordering::Relaxed);
+        if let Some(document) = SERVER_ITEMS.lock().ok().and_then(|items| items.clone()) {
+            absorb(&document);
+        }
+        absorb_mod_paths(&mod_dirs(), &mut entries);
+        state.paths = link(&entries);
+        // The card is priced afresh from the new paths.
+        state.price = None;
     }
 
     /// Spawns the control and wires click handlers to the atomics.
@@ -1284,8 +1364,12 @@ impl StableExtension for ItemFilter {
             state.placed = None;
             state.regrouped = false;
             state.price = None;
+            state.asked_server = false;
         }
 
+        if state.list.is_none() {
+            state.list = find_mounted(ctx, &state.mounts);
+        }
         if state.list.is_none() {
             match state.search_wait.checked_sub(1) {
                 Some(remaining) => {
@@ -1295,6 +1379,12 @@ impl StableExtension for ItemFilter {
                 None => {
                     state.search_wait = SEARCH_INTERVAL_FRAMES;
                     state.list = find_node(ctx, "", LIST_NODE, 0);
+                    let mount = state.list.as_deref().and_then(mount_of).map(str::to_string);
+                    if let Some(mount) = mount {
+                        if mount != SCREEN_MOUNT && !state.mounts.contains(&mount) {
+                            state.mounts.push(mount);
+                        }
+                    }
                 }
             }
         }
@@ -1311,6 +1401,17 @@ impl StableExtension for ItemFilter {
         if !state.loaded {
             state.loaded = true;
             Self::load(&mut state, ctx);
+            Self::load_paths(&mut state, ctx);
+        }
+        // The server's item settings come when it reads them, which can be
+        // after the screen opens: it is asked once per opening, and the paths
+        // are made again whenever a new read lands.
+        if !SERVER_READ.load(Ordering::Relaxed) && !state.asked_server {
+            state.asked_server = true;
+            ctx.send_command(SERVER_COMMAND, &[]);
+        }
+        if SERVER_ITEMS_READ.load(Ordering::Relaxed) != state.paths_read {
+            Self::load_paths(&mut state, ctx);
         }
 
         if !state.built {
@@ -1383,6 +1484,7 @@ fn init(host: &StableHost) -> StableMod {
     reg.set_extension(ItemFilter {
         state: Mutex::new(State::default()),
     });
+    reg.set_server_extension(ServerItems);
     reg
 }
 
@@ -1484,8 +1586,13 @@ mod tests {
     #[test]
     fn totals_follow_every_way_up() {
         let mut entries = PathEntries::new();
-        // The game's own items, linked by `next_tier` only.
-        each_setting_item(
+        let mut absorb = |document: &str| {
+            each_setting_item(document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            })
+        };
+        // The client's copy: the game's own items, at the game's prices.
+        absorb(
             r#"{ "iron_blade": { "key": "ironsword", "price": 500,
                    "next_tier": ["soldiers_longsword"] },
                  "soldiers_longsword": { "key": "soldiers_longsword", "price": 500,
@@ -1493,28 +1600,32 @@ mod tests {
                  "ruinous_blade": { "key": "ruinous_blade", "price": 800, "next_tier": [] },
                  "vital_orb": { "key": "vital_orb", "price": 500,
                    "next_tier": ["hardened_heart"] },
-                 "hardened_heart": { "key": "hardened_heart", "price": 500, "next_tier": [] } }"#,
-            |id, entry| absorb_path_entry(&mut entries, id, entry),
+                 "hardened_heart": { "key": "hardened_heart", "price": 500, "next_tier": [] },
+                 "mod_items": [] }"#,
         );
-        // A mod's merge over them: prices only, so the links stay.
-        each_setting_item(
-            r#"{ "iron_blade": { "key": "ironsword", "price": 250 },
-                 "soldiers_longsword": { "price": 250 },
-                 "ruinous_blade": { "price": 400 },
-                 "vital_orb": { "price": 250 },
-                 "hardened_heart": { "price": 250 } }"#,
-            |id, entry| absorb_path_entry(&mut entries, id, entry),
+        // The server's: a mod's items too, and the game's items' `next_tier`
+        // with the mod's components the game has added to them.
+        absorb(
+            r#"{ "soldiers_longsword": { "key": "soldiers_longsword", "price": 500,
+                   "next_tier": ["ruinous_blade", "serrated_dirk"] },
+                 "ruinous_blade": { "key": "ruinous_blade", "price": 800,
+                   "next_tier": ["phage"] },
+                 "hardened_heart": { "key": "hardened_heart", "price": 500,
+                   "next_tier": ["phage"] },
+                 "mod_items": [
+                   { "key": "serrated_dirk", "price": 400, "next_tier": ["bastionbreaker"] },
+                   { "key": "bastionbreaker", "price": 650, "next_tier": [] },
+                   { "key": "phage", "price": 500, "next_tier": [] },
+                   { "key": "orphan", "price": 100, "next_tier": ["not_installed"] } ] }"#,
         );
-        // A code mod's items, linked to the game's by `previous_tier` only.
-        absorb_path_file(
-            "\u{feff}{ \"serrated_dirk\": { \"price\": 400, \
-               \"previous_tier\": [\"soldiers_longsword\"], \"next_tier\": [\"bastionbreaker\"] }, \
-             \"bastionbreaker\": { \"price\": 650, \"previous_tier\": [\"serrated_dirk\"], \
-               \"next_tier\": [] }, \
-             \"phage\": { \"price\": 500, \
-               \"previous_tier\": [\"hardened_heart\", \"ruinous_blade\"], \"next_tier\": [] }, \
-             \"orphan\": { \"price\": 100, \"previous_tier\": [\"not_installed\"] } }",
-            &mut entries,
+        // A mod's merge last: its prices win, and its own `next_tier`, which
+        // knows nothing of the mod's components, cannot take the links away.
+        absorb(
+            "\u{feff}{ \"iron_blade\": { \"key\": \"ironsword\", \"price\": 250 }, \
+             \"soldiers_longsword\": { \"price\": 250, \"next_tier\": [\"ruinous_blade\"] }, \
+             \"ruinous_blade\": { \"price\": 400 }, \
+             \"vital_orb\": { \"price\": 250 }, \
+             \"hardened_heart\": { \"price\": 250 } }",
         );
         let paths = link(&entries);
         let total = |id: &str| total_price(&paths, id, MAX_STEPS);
@@ -1533,12 +1644,30 @@ mod tests {
     }
 
     #[test]
+    fn screens_are_remembered_by_mount() {
+        assert_eq!(
+            mount_of("main.contents.item_info.data.item_list"),
+            Some("main.contents")
+        );
+        assert_eq!(
+            mount_of("item_info_popup.popup.content.item_info.data.item_list"),
+            Some("item_info_popup.popup.content")
+        );
+        // A screen at the UI root is mounted at the root, whose path is "".
+        assert_eq!(mount_of("item_info.data.item_list"), Some(""));
+        // Not where the exe puts the grid under a screen.
+        assert_eq!(mount_of("shop.item_list"), None);
+        assert_eq!(mount_of("data.item_list"), None);
+        assert_eq!(mount_of("main.metadata.item_list"), None);
+    }
+
+    #[test]
     fn a_circle_ends() {
         let mut entries = PathEntries::new();
-        absorb_path_file(
-            r#"{ "a": { "price": 1, "previous_tier": ["b"] },
-                 "b": { "price": 1, "previous_tier": ["a"] } }"#,
-            &mut entries,
+        each_setting_item(
+            r#"{ "mod_items": [ { "key": "a", "price": 1, "next_tier": ["b"] },
+                                { "key": "b", "price": 1, "next_tier": ["a"] } ] }"#,
+            |id, entry| absorb_path_entry(&mut entries, id, entry),
         );
         assert_eq!(total_price(&link(&entries), "a", MAX_STEPS), Some((8, 8)));
     }
