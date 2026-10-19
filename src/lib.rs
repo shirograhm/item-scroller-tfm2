@@ -103,14 +103,20 @@
 //! how the Riot pack sums what a held item has cost in a match.
 //!
 //! The paths come from the game's item settings, and from mods' merges over
-//! them last. The client's copy of those settings has only the game's own
-//! thirty, so the management server's is read too ([`ServerItems`]): it holds
-//! every mod's items under `mod_items`, with their prices and `next_tier`, and
-//! the game has written each one into the `next_tier` of the items it is
-//! built from - the only place the links from the game's items to a mod's
-//! components are written out, since a mod names them as its own item's
-//! `previous_tier`. Links add up across the sources rather than replace, so a
-//! merge file listing a game item's own `next_tier` cannot cut them.
+//! them last. The settings hold every mod's items under `mod_items`, with
+//! their prices and `next_tier`, and the game has written each one into the
+//! `next_tier` of the items it is built from - the only place the links from
+//! the game's items to a mod's components are written out, since a mod names
+//! them as its own item's `previous_tier`. Links add up across the sources
+//! rather than replace, so a merge file listing a game item's own `next_tier`
+//! cannot cut them.
+//!
+//! The settings are the save's, and the game only ever adds those links, so a
+//! save older than a recipe change still has the old one: Long Sword into
+//! Madred's Razors, long after Madred's came to build from Hunter's Machete
+//! alone. The Riot pack clears its own from the management server's copy, so
+//! that copy is read ([`ServerItems`]) in preference to the client's, which
+//! stays as the save was loaded.
 //!
 //! The exe says which item the card shows only by its name, so the item is
 //! found by name, matched against the names on the grid's own slots - which
@@ -1113,17 +1119,23 @@ fn read_server_items(ctx: &StableServerCtx<'_>) {
     if !priced {
         return;
     }
-    if let Ok(mut items) = SERVER_ITEMS.lock() {
-        *items = Some(document);
-    }
-    SERVER_ITEMS_READ.fetch_add(1, Ordering::Relaxed);
     SERVER_READ.store(true, Ordering::Relaxed);
+    let Ok(mut items) = SERVER_ITEMS.lock() else {
+        return;
+    };
+    if items.as_deref() != Some(document.as_str()) {
+        *items = Some(document);
+        SERVER_ITEMS_READ.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Reads the server's item settings: as each save starts its server, at every
-/// management tick until that has worked, and whenever Item Info asks
-/// ([`SERVER_COMMAND`]) - since the ticks only run while the calendar moves,
-/// a save just loaded would otherwise have none until the player proceeds.
+/// management tick until that has worked, and whenever Item Info opens
+/// ([`SERVER_COMMAND`]). The ticks only run while the calendar moves, so a
+/// save just loaded would otherwise have none until the player proceeds; and
+/// another mod can still be rewriting them when the server starts - the Riot
+/// pack clears an old save's stale recipe links then - so the copy read as
+/// Item Info opens is the one that counts.
 struct ServerItems;
 
 impl StableServerExtension for ServerItems {
@@ -1205,22 +1217,25 @@ impl ItemFilter {
         state.classes = load_class_file();
     }
 
-    /// Makes the build paths from every copy of the item settings: the
-    /// client's, the server's as last read, and mods' merges last, whose
-    /// prices are the ones matches are played with.
+    /// Makes the build paths from the item settings - the server's as last
+    /// read, or the client's until there is one - and mods' merges over them
+    /// last, whose prices are the ones matches are played with.
+    ///
+    /// Never both copies: they are the same save's, but the client's is as
+    /// the save was loaded, so it keeps the stale recipe links the Riot pack
+    /// clears from the server's.
     fn load_paths(state: &mut State, ctx: &StableClient<'_>) {
         let mut entries = PathEntries::new();
-        let mut absorb = |document: &str| {
-            each_setting_item(document, |id, entry| {
-                absorb_path_entry(&mut entries, id, entry)
-            })
-        };
-        if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
-            absorb(&document);
-        }
         state.paths_read = SERVER_ITEMS_READ.load(Ordering::Relaxed);
-        if let Some(document) = SERVER_ITEMS.lock().ok().and_then(|items| items.clone()) {
-            absorb(&document);
+        let settings = SERVER_ITEMS
+            .lock()
+            .ok()
+            .and_then(|items| items.clone())
+            .or_else(|| ctx.setting_get_json(SettingTargetV1::ItemSetting, ""));
+        if let Some(document) = settings {
+            each_setting_item(&document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            });
         }
         absorb_mod_paths(&mod_dirs(), &mut entries);
         state.paths = link(&entries);
@@ -1403,10 +1418,10 @@ impl StableExtension for ItemFilter {
             Self::load(&mut state, ctx);
             Self::load_paths(&mut state, ctx);
         }
-        // The server's item settings come when it reads them, which can be
-        // after the screen opens: it is asked once per opening, and the paths
-        // are made again whenever a new read lands.
-        if !SERVER_READ.load(Ordering::Relaxed) && !state.asked_server {
+        // The server reads its item settings when asked, which lands after
+        // the screen opens: it is asked once per opening, and the paths are
+        // made again whenever a read finds them changed.
+        if !state.asked_server {
             state.asked_server = true;
             ctx.send_command(SERVER_COMMAND, &[]);
         }
