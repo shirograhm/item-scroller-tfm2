@@ -92,6 +92,36 @@
 //!
 //! Items resolved by no source are left lit rather than grayed, so an unknown
 //! item is never wrongly dimmed.
+//!
+//! # The total price
+//!
+//! The card's price is one upgrade step's: Bastionbreaker's 650 is what turns
+//! a Serrated Dirk into it, not what it costs from nothing. [`show_total`]
+//! replaces it with the whole way up - the item's price plus the cheapest and
+//! the dearest way to the item it is built from, as one number or a range.
+//! An item's `previous_tier` items are alternatives, any one of them, which is
+//! how the Riot pack sums what a held item has cost in a match.
+//!
+//! The paths come from the game's item settings, and from mods' merges over
+//! them last. The settings hold every mod's items under `mod_items`, with
+//! their prices and `next_tier`, and the game has written each one into the
+//! `next_tier` of the items it is built from - the only place the links from
+//! the game's items to a mod's components are written out, since a mod names
+//! them as its own item's `previous_tier`. Links add up across the sources
+//! rather than replace, so a merge file listing a game item's own `next_tier`
+//! cannot cut them.
+//!
+//! The settings are the save's, and the game only ever adds those links, so a
+//! save older than a recipe change still has the old one: Long Sword into
+//! Madred's Razors, long after Madred's came to build from Hunter's Machete
+//! alone. The Riot pack clears its own from the management server's copy, so
+//! that copy is read ([`ServerItems`]) in preference to the client's, which
+//! stays as the save was loaded.
+//!
+//! The exe says which item the card shows only by its name, so the item is
+//! found by name, matched against the names on the grid's own slots - which
+//! are in the player's language, whatever it is, and each slot is named after
+//! its item. An item it cannot name, or price, keeps the exe's own number.
 
 use mod_api_stable::*;
 use std::collections::BTreeMap;
@@ -105,8 +135,15 @@ const MOD_ID: &str = "item_scroller_tfm2";
 /// root prefix is not part of the stable contract, so we search for the node.
 const LIST_NODE: &str = "item_list";
 const CONTENTS_NODE: &str = "contents";
-/// The item art inside a slot, from the `item_slot` template.
+/// Where the exe mounts the screen a tab switches to (`main.contents.<screen>`),
+/// and the grid's path under that screen's root. Neither is in the stable
+/// contract either, so they only make a fast path in front of the search.
+const SCREEN_MOUNT: &str = "main.contents";
+const SCREEN_LIST: &str = "data.item_list";
+/// The item art and the name label inside a slot, from the `item_slot`
+/// template.
 const SLOT_ICON: &str = "icon";
+const SLOT_NAME: &str = "name";
 
 const ROOT_NODE: &str = "item_filter";
 /// The card column, and the node the control keeps itself pinned above.
@@ -125,6 +162,20 @@ const MOD_ITEM_CONFIG: &str = "config-default.json";
 const MOD_ITEM_SETTING: &str = "setting/item_setting.item_setting";
 const MOD_OVERRIDE_INFO: &str = "mod.override_info";
 const ITEM_SETTING_ASSET: &str = "asset/base/setting/item_setting";
+/// What the client sends for the server to read its item settings now, rather
+/// than at its next management tick, which only comes once the calendar moves.
+const SERVER_COMMAND: &str = "item_scroller_tfm2.read_items";
+/// How a label refers to an item's name for the game to resolve.
+const ITEM_NAME_PREFIX: &str = "#asset/base/text/item?";
+const ITEM_NAME_SUFFIX: &str = ".name";
+
+/// The card's name and price labels, under the screen's `data` node - the exe
+/// writes `data.item_detail.name` and `data.item_detail.price_area.price`.
+const DETAIL_NAME: &str = "item_detail.name";
+const DETAIL_PRICE: &str = "item_detail.price_area.price";
+/// Upgrade steps a path is followed for at most: more than there are tiers,
+/// and what ends a path that runs in a circle.
+const MAX_STEPS: usize = 8;
 
 /// The item pack whose classes the class menu lists: its folder name under
 /// `mods/` when installed by hand, and its Workshop published file id when
@@ -266,6 +317,30 @@ fn parent_of(path: &str) -> &str {
     path.rsplit_once('.').map_or("", |(head, _)| head)
 }
 
+/// The grid of an Item Info screen mounted at [`SCREEN_MOUNT`] or one of
+/// `mounts`. One level down from each, so cheap enough for every frame: the
+/// screen is found the frame it opens, and the Boots section and the menus are
+/// in place before it is seen. The full [`find_node`] search only runs every
+/// [`SEARCH_INTERVAL_FRAMES`], and the grid used to be drawn as the exe built
+/// it for that long before it was regrouped under the player's eyes.
+fn find_mounted(ctx: &StableClient<'_>, mounts: &[String]) -> Option<String> {
+    std::iter::once(SCREEN_MOUNT)
+        .chain(mounts.iter().map(String::as_str))
+        .flat_map(|mount| {
+            ctx.ui_child_names(mount)
+                .into_iter()
+                .map(move |screen| join(&join(mount, &screen), SCREEN_LIST))
+        })
+        .find(|list| ctx.ui_exists(list))
+}
+
+/// Where the screen holding the grid at `list` is mounted, for
+/// [`find_mounted`] to look next time: the item builds screen's popup, say.
+fn mount_of(list: &str) -> Option<&str> {
+    let screen = list.strip_suffix(SCREEN_LIST)?.strip_suffix('.')?;
+    Some(parent_of(screen))
+}
+
 fn find_node(ctx: &StableClient<'_>, path: &str, target: &str, depth: usize) -> Option<String> {
     if depth > MAX_DEPTH {
         return None;
@@ -315,25 +390,15 @@ fn setting_id<'a>(map_key: &'a str, entry: &'a serde_json::Value) -> &'a str {
         .unwrap_or(map_key)
 }
 
-/// The game's item document: `{ "<id>": { "key": "<id>", "stat": { ... } },
-/// "mod_items": [...] }`.
-fn absorb_item_setting(document: &str, items: &mut ItemStats) {
+/// Every item in the game's item document - `{ "<id>": { "key": "<id>",
+/// "stat": { ... } }, "mod_items": [...] }` - or in a mod's merge over it,
+/// which has the same shape with fewer items and fields, by the id it is
+/// filed under.
+fn each_setting_item(document: &str, mut visit: impl FnMut(&str, &serde_json::Value)) {
+    let document = document.trim_start_matches('\u{feff}');
     let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
     else {
         return;
-    };
-
-    let granted = |entry: &serde_json::Value| -> Vec<String> {
-        entry
-            .get("stat")
-            .and_then(|stat| stat.as_object())
-            .map(|stat| {
-                stat.iter()
-                    .filter(|(_, value)| nonzero(value))
-                    .map(|(key, _)| key.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
     };
 
     for (id, entry) in &root {
@@ -345,13 +410,30 @@ fn absorb_item_setting(document: &str, items: &mut ItemStats) {
                     .iter()
                     .find_map(|field| entry.get(field).and_then(|value| value.as_str()));
                 if let Some(id) = id {
-                    record(items, id, granted(entry).into_iter());
+                    visit(id, entry);
                 }
             }
         } else {
-            record(items, setting_id(id, entry), granted(entry).into_iter());
+            visit(setting_id(id, entry), entry);
         }
     }
+}
+
+/// The game's item document.
+fn absorb_item_setting(document: &str, items: &mut ItemStats) {
+    each_setting_item(document, |id, entry| {
+        let granted: Vec<String> = entry
+            .get("stat")
+            .and_then(|stat| stat.as_object())
+            .map(|stat| {
+                stat.iter()
+                    .filter(|(_, value)| nonzero(value))
+                    .map(|(key, _)| key.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        record(items, id, granted.into_iter());
+    });
 }
 
 /// A code mod's shipped stat table: `{ "<id>": { "attack": 65, ... } }` - flat,
@@ -385,35 +467,29 @@ fn absorb_mod_config(document: &str, items: &mut ItemStats) {
 /// Health off the Null-Magic Mantle (`mystic_cloak`) as well as giving its
 /// Phantom Dancer (`thunderclaw`) movement speed.
 fn absorb_setting_merge(document: &str, items: &mut ItemStats) {
-    let document = document.trim_start_matches('\u{feff}');
-    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
-    else {
-        return;
-    };
-
-    for (id, entry) in &root {
+    each_setting_item(document, |id, entry| {
         let Some(stat) = entry.get("stat").and_then(|stat| stat.as_object()) else {
-            continue;
+            return;
         };
-        let granted = items.entry(setting_id(id, entry).to_string()).or_default();
+        let granted = items.entry(id.to_string()).or_default();
         for (key, value) in stat {
             granted.retain(|had| had != key);
             if nonzero(value) {
                 granted.push(key.clone());
             }
         }
-    }
+    });
 }
 
-/// Whether a mod's `mod.override_info` merges its item settings over the game's.
-/// Only then does the game apply them - and only then do we, which keeps a
-/// settings file that is merely lying in a folder (an unpacked copy of the base
-/// game's, say) from being read as a mod's.
-fn merges_item_setting(override_info: &str) -> bool {
+/// Whether a mod's `mod.override_info` merges one of its files over the game's
+/// `asset`. Only then does the game apply it - and only then do we, which keeps
+/// a settings file that is merely lying in a folder (an unpacked copy of the
+/// base game's, say) from being read as a mod's.
+fn merges(override_info: &str, asset: &str) -> bool {
     serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
         override_info.trim_start_matches('\u{feff}'),
     )
-    .is_ok_and(|root| root.contains_key(ITEM_SETTING_ASSET))
+    .is_ok_and(|root| root.contains_key(asset))
 }
 
 /// Where subscribed Workshop items live: beside the game install rather than
@@ -472,28 +548,44 @@ fn load_class_file() -> ClassTable {
         .map_or_else(ClassTable::new, |text| parse_class_file(&text))
 }
 
-fn absorb_mod_files(items: &mut ItemStats) {
-    let dirs: Vec<PathBuf> = mod_roots()
+/// Every mod's folder, in [`mod_roots`].
+fn mod_dirs() -> Vec<PathBuf> {
+    mod_roots()
         .into_iter()
         .filter_map(|root| std::fs::read_dir(root).ok())
         .flat_map(|entries| entries.flatten().map(|entry| entry.path()))
-        .collect();
+        .collect()
+}
 
-    for dir in &dirs {
+/// A mod's `file`, if its `mod.override_info` merges it over the game's `asset`.
+fn merged_file(dir: &Path, asset: &str, file: &str) -> Option<String> {
+    let override_info = std::fs::read_to_string(dir.join(MOD_OVERRIDE_INFO)).ok()?;
+    if !merges(&override_info, asset) {
+        return None;
+    }
+    std::fs::read_to_string(dir.join(file)).ok()
+}
+
+fn absorb_mod_files(dirs: &[PathBuf], items: &mut ItemStats) {
+    for dir in dirs {
         if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_CONFIG)) {
             absorb_mod_config(&text, items);
         }
     }
     // Merges go last: they are what the game actually applies to the items
     // they name, so they get the final word on those items' stats.
-    for dir in &dirs {
-        let merged = std::fs::read_to_string(dir.join(MOD_OVERRIDE_INFO))
-            .is_ok_and(|text| merges_item_setting(&text));
-        if !merged {
-            continue;
-        }
-        if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_SETTING)) {
+    for dir in dirs {
+        if let Some(text) = merged_file(dir, ITEM_SETTING_ASSET, MOD_ITEM_SETTING) {
             absorb_setting_merge(&text, items);
+        }
+    }
+}
+
+/// Prices and build paths from mods' merges over the game's item document.
+fn absorb_mod_paths(dirs: &[PathBuf], entries: &mut PathEntries) {
+    for dir in dirs {
+        if let Some(text) = merged_file(dir, ITEM_SETTING_ASSET, MOD_ITEM_SETTING) {
+            each_setting_item(&text, |id, entry| absorb_path_entry(entries, id, entry));
         }
     }
 }
@@ -838,6 +930,239 @@ fn regroup_boots(ctx: &mut StableClient<'_>, contents: &str) -> bool {
     true
 }
 
+// --- the total price ------------------------------------------------------
+
+/// What is known of one item's place in the build paths. A price a source
+/// gives replaces the one read before; the items it is upgraded into add up
+/// across sources, since no one source has them all.
+#[derive(Default)]
+struct PathEntry {
+    price: Option<u32>,
+    next: Vec<String>,
+}
+
+type PathEntries = BTreeMap<String, PathEntry>;
+
+/// item id -> its own price and the items it can be built from, any one of
+/// them. Made by [`link`].
+type Paths = BTreeMap<String, (u32, Vec<String>)>;
+
+/// An item's name, in any language read -> its id.
+type ItemNames = BTreeMap<String, String>;
+
+/// One item's `price` and `next_tier`, from any copy of the item settings or a
+/// mod's merge over them.
+fn absorb_path_entry(entries: &mut PathEntries, id: &str, entry: &serde_json::Value) {
+    let known = entries.entry(id.to_string()).or_default();
+    if let Some(price) = entry.get("price").and_then(|price| price.as_f64()) {
+        known.price = Some(price.max(0.0).round() as u32);
+    }
+    let next = entry.get("next_tier").and_then(|next| next.as_array());
+    for next in next.into_iter().flatten().filter_map(|next| next.as_str()) {
+        if !known.next.iter().any(|known| known == next) {
+            known.next.push(next.to_string());
+        }
+    }
+}
+
+/// Turns every item's `next_tier` round, into what each item is built from:
+/// every item whose `next_tier` names it. A link to or from an item with no
+/// price, such as one from a mod that is not installed, leads nowhere and is
+/// dropped.
+fn link(entries: &PathEntries) -> Paths {
+    let mut paths: Paths = entries
+        .iter()
+        .filter_map(|(id, entry)| Some((id.clone(), (entry.price?, Vec::new()))))
+        .collect();
+    let links = entries
+        .iter()
+        .flat_map(|(id, entry)| entry.next.iter().map(move |next| (id, next)));
+    for (from, into) in links {
+        if !paths.contains_key(from) {
+            continue;
+        }
+        if let Some((_, sources)) = paths.get_mut(into) {
+            if !sources.contains(from) {
+                sources.push(from.clone());
+            }
+        }
+    }
+    paths
+}
+
+/// The least and the most an item costs from nothing: its own price, plus the
+/// cheapest and the dearest way up to any item it is built from. Followed for
+/// at most `steps` items, which is what ends a path that runs in a circle.
+fn total_price(paths: &Paths, id: &str, steps: usize) -> Option<(u32, u32)> {
+    let (price, sources) = paths.get(id)?;
+    let below = if steps > 1 {
+        sources
+            .iter()
+            .filter_map(|source| total_price(paths, source, steps - 1))
+            .reduce(|(low, high), (other_low, other_high)| {
+                (low.min(other_low), high.max(other_high))
+            })
+    } else {
+        None
+    };
+    let (low, high) = below.unwrap_or((0, 0));
+    Some((price + low, price + high))
+}
+
+/// A total as the card shows it: one number, or a range when the ways up cost
+/// different amounts.
+fn price_text((low, high): (u32, u32)) -> String {
+    if low == high {
+        low.to_string()
+    } else {
+        format!("{low} - {high}")
+    }
+}
+
+/// Every slot's name in the grid, by the item id the slot is named after. The
+/// exe fills those labels the way it fills the card's, in the player's
+/// language, so whatever the card says is in here. Nothing else knows the game
+/// items' names outside English: `i18n` only ever answers in English.
+///
+/// Read before [`regroup_boots`] replaces the exe's boots slots, whose rebuilt
+/// labels hold only a reference. Names are added, never cleared, so a name
+/// read from the exe's slot outlives that slot.
+fn index_grid_names(ctx: &StableClient<'_>, contents: &str, names: &mut ItemNames) {
+    for id in ctx.ui_child_names(contents) {
+        let Some(name) = ctx.ui_text(&join(&join(contents, &id), SLOT_NAME)) else {
+            continue;
+        };
+        let name = name.trim();
+        if !name.is_empty() {
+            names.insert(name.to_string(), id);
+        }
+    }
+}
+
+/// The item a name label shows: by the reference it was handed for the game
+/// to resolve, or by the name that reference resolved to.
+fn item_named<'a>(paths: &'a Paths, names: &'a ItemNames, label: &str) -> Option<&'a str> {
+    let reference = label
+        .strip_prefix(ITEM_NAME_PREFIX)
+        .and_then(|path| path.strip_suffix(ITEM_NAME_SUFFIX));
+    match reference {
+        Some(id) => paths.get_key_value(id).map(|(id, _)| id.as_str()),
+        None => names.get(label.trim()).map(String::as_str),
+    }
+}
+
+/// What the card's price label was last set to, and for which item.
+struct PriceShown {
+    /// The name label at the time.
+    name: String,
+    /// The exe's own price text for that item.
+    game: String,
+    /// What the label was set to.
+    shown: String,
+}
+
+/// Puts the total price on the card in place of the step price the exe
+/// writes, whenever the label stops saying what was last put there - which
+/// covers the exe filling it once per item or every frame. An item that
+/// cannot be named or priced keeps the exe's text.
+fn show_total(state: &mut State, ctx: &mut StableClient<'_>, host: &str) {
+    let label = join(host, DETAIL_PRICE);
+    let Some(text) = ctx.ui_text(&label) else {
+        return;
+    };
+    let name = ctx.ui_text(&join(host, DETAIL_NAME)).unwrap_or_default();
+    let game = match &state.price {
+        Some(last) if last.shown == text => {
+            if last.name == name {
+                return;
+            }
+            // The card moved on to another item but the exe left the label
+            // as it was, so that item's price is the one the exe last wrote.
+            last.game.clone()
+        }
+        _ => text.clone(),
+    };
+    let shown = item_named(&state.paths, &state.names, &name)
+        .and_then(|id| total_price(&state.paths, id, MAX_STEPS))
+        .map_or_else(|| game.clone(), price_text);
+    if shown != text {
+        ctx.ui_set_text(&label, &shown);
+    }
+    state.price = Some(PriceShown { name, game, shown });
+}
+
+// --- the server's item settings -------------------------------------------
+
+/// The management server's item settings, as last read. The server runs in
+/// the client's process, so the two halves of this mod share it.
+static SERVER_ITEMS: Mutex<Option<String>> = Mutex::new(None);
+/// How many times [`SERVER_ITEMS`] has been read, for the client to notice a
+/// new one by.
+static SERVER_ITEMS_READ: AtomicUsize = AtomicUsize::new(0);
+/// Whether the running server's settings have been read yet.
+static SERVER_READ: AtomicBool = AtomicBool::new(false);
+
+/// Reads the server's item settings into [`SERVER_ITEMS`]. A server that has
+/// not loaded them yet answers with nothing, or with items that all cost 0,
+/// and that read does not count.
+fn read_server_items(ctx: &StableServerCtx<'_>) {
+    let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") else {
+        return;
+    };
+    let mut priced = false;
+    each_setting_item(&document, |_, entry| {
+        priced |= entry
+            .get("price")
+            .and_then(|price| price.as_f64())
+            .is_some_and(|price| price > 0.0);
+    });
+    if !priced {
+        return;
+    }
+    SERVER_READ.store(true, Ordering::Relaxed);
+    let Ok(mut items) = SERVER_ITEMS.lock() else {
+        return;
+    };
+    if items.as_deref() != Some(document.as_str()) {
+        *items = Some(document);
+        SERVER_ITEMS_READ.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Reads the server's item settings: as each save starts its server, at every
+/// management tick until that has worked, and whenever Item Info opens
+/// ([`SERVER_COMMAND`]). The ticks only run while the calendar moves, so a
+/// save just loaded would otherwise have none until the player proceeds; and
+/// another mod can still be rewriting them when the server starts - the Riot
+/// pack clears an old save's stale recipe links then - so the copy read as
+/// Item Info opens is the one that counts.
+struct ServerItems;
+
+impl StableServerExtension for ServerItems {
+    fn on_server_start(&self, ctx: &mut StableServerCtx<'_>) {
+        SERVER_READ.store(false, Ordering::Relaxed);
+        read_server_items(ctx);
+    }
+
+    fn before_management_tick(&self, ctx: &mut StableServerCtx<'_>) {
+        if !SERVER_READ.load(Ordering::Relaxed) {
+            read_server_items(ctx);
+        }
+    }
+
+    fn handle_command(
+        &self,
+        ctx: &mut StableServerCtx<'_>,
+        command: &StableCommand<'_>,
+    ) -> CommandResultV1 {
+        if command.command != SERVER_COMMAND {
+            return CommandResultV1::Pass;
+        }
+        read_server_items(ctx);
+        CommandResultV1::Handled
+    }
+}
+
 // --- extension ------------------------------------------------------------
 
 #[derive(Default)]
@@ -845,6 +1170,9 @@ struct State {
     /// Path of `item_list`, once found; cleared when the screen goes away.
     list: Option<String>,
     search_wait: u32,
+    /// Places other than [`SCREEN_MOUNT`] the search has found the screen
+    /// mounted at. Kept for the session, since the exe reuses them.
+    mounts: Vec<String>,
     built: bool,
     /// Which menu's panel is down, if any. Only one is ever open.
     open: Option<usize>,
@@ -863,6 +1191,15 @@ struct State {
     placed: Option<i32>,
     /// Whether [`regroup_boots`] has rebuilt the current grid's Boots section.
     regrouped: bool,
+    /// Every item's price and what it is built from, for [`show_total`].
+    paths: Paths,
+    /// The [`SERVER_ITEMS_READ`] count `paths` was made from.
+    paths_read: usize,
+    /// Whether Item Info, while open, has asked the server for its settings.
+    asked_server: bool,
+    names: ItemNames,
+    /// What [`show_total`] last put on the card.
+    price: Option<PriceShown>,
 }
 
 struct ItemFilter {
@@ -870,6 +1207,42 @@ struct ItemFilter {
 }
 
 impl ItemFilter {
+    /// Reads every source of item stats and classes. None of them can change
+    /// while the game runs, so this happens once.
+    fn load(state: &mut State, ctx: &StableClient<'_>) {
+        if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
+            absorb_item_setting(&document, &mut state.items);
+        }
+        absorb_mod_files(&mod_dirs(), &mut state.items);
+        state.classes = load_class_file();
+    }
+
+    /// Makes the build paths from the item settings - the server's as last
+    /// read, or the client's until there is one - and mods' merges over them
+    /// last, whose prices are the ones matches are played with.
+    ///
+    /// Never both copies: they are the same save's, but the client's is as
+    /// the save was loaded, so it keeps the stale recipe links the Riot pack
+    /// clears from the server's.
+    fn load_paths(state: &mut State, ctx: &StableClient<'_>) {
+        let mut entries = PathEntries::new();
+        state.paths_read = SERVER_ITEMS_READ.load(Ordering::Relaxed);
+        let settings = SERVER_ITEMS
+            .lock()
+            .ok()
+            .and_then(|items| items.clone())
+            .or_else(|| ctx.setting_get_json(SettingTargetV1::ItemSetting, ""));
+        if let Some(document) = settings {
+            each_setting_item(&document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            });
+        }
+        absorb_mod_paths(&mod_dirs(), &mut entries);
+        state.paths = link(&entries);
+        // The card is priced afresh from the new paths.
+        state.price = None;
+    }
+
     /// Spawns the control and wires click handlers to the atomics.
     fn build(state: &mut State, ctx: &mut StableClient<'_>, host: &str) {
         if !ctx.ui_spawn_source(host, &control_source()) {
@@ -1005,8 +1378,13 @@ impl StableExtension for ItemFilter {
             state.applied = None;
             state.placed = None;
             state.regrouped = false;
+            state.price = None;
+            state.asked_server = false;
         }
 
+        if state.list.is_none() {
+            state.list = find_mounted(ctx, &state.mounts);
+        }
         if state.list.is_none() {
             match state.search_wait.checked_sub(1) {
                 Some(remaining) => {
@@ -1016,6 +1394,12 @@ impl StableExtension for ItemFilter {
                 None => {
                     state.search_wait = SEARCH_INTERVAL_FRAMES;
                     state.list = find_node(ctx, "", LIST_NODE, 0);
+                    let mount = state.list.as_deref().and_then(mount_of).map(str::to_string);
+                    if let Some(mount) = mount {
+                        if mount != SCREEN_MOUNT && !state.mounts.contains(&mount) {
+                            state.mounts.push(mount);
+                        }
+                    }
                 }
             }
         }
@@ -1029,15 +1413,20 @@ impl StableExtension for ItemFilter {
         }
         let host = parent_of(&list).to_string();
 
-        // None of these sources can change while the game runs, so read them
-        // once.
         if !state.loaded {
             state.loaded = true;
-            if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
-                absorb_item_setting(&document, &mut state.items);
-            }
-            absorb_mod_files(&mut state.items);
-            state.classes = load_class_file();
+            Self::load(&mut state, ctx);
+            Self::load_paths(&mut state, ctx);
+        }
+        // The server reads its item settings when asked, which lands after
+        // the screen opens: it is asked once per opening, and the paths are
+        // made again whenever a read finds them changed.
+        if !state.asked_server {
+            state.asked_server = true;
+            ctx.send_command(SERVER_COMMAND, &[]);
+        }
+        if SERVER_ITEMS_READ.load(Ordering::Relaxed) != state.paths_read {
+            Self::load_paths(&mut state, ctx);
         }
 
         if !state.built {
@@ -1072,6 +1461,8 @@ impl StableExtension for ItemFilter {
         let mut count = ctx.ui_child_count(&contents).unwrap_or(0);
         if state.applied.is_none_or(|(_, applied)| applied != count) {
             Self::detect_classes(&mut state, ctx, &root, &contents);
+            // Before the boots are regrouped, while their slots are the exe's.
+            index_grid_names(ctx, &contents, &mut state.names);
             // A repopulated grid has lost the Boots section along with every
             // other child, so it is rebuilt whenever the header is gone.
             if state.regrouped && !ctx.ui_exists(&join(&contents, BOOTS_HEADER)) {
@@ -1094,6 +1485,8 @@ impl StableExtension for ItemFilter {
             apply(&state.items, &state.classes, ctx, &contents, keys, class);
             state.applied = Some((state.current, count));
         }
+
+        show_total(&mut state, ctx, &host);
     }
 }
 
@@ -1106,6 +1499,7 @@ fn init(host: &StableHost) -> StableMod {
     reg.set_extension(ItemFilter {
         state: Mutex::new(State::default()),
     });
+    reg.set_server_extension(ServerItems);
     reg
 }
 
@@ -1196,11 +1590,122 @@ mod tests {
 
     #[test]
     fn only_wired_merges_count() {
-        assert!(merges_item_setting(
-            r#"{ "asset/base/setting/item_setting": { "type": "merge" } }"#
+        assert!(merges(
+            r#"{ "asset/base/setting/item_setting": { "type": "merge" } }"#,
+            ITEM_SETTING_ASSET
         ));
-        assert!(!merges_item_setting(r#"{ "asset/base/text/item": {} }"#));
-        assert!(!merges_item_setting("not json"));
+        assert!(!merges(r#"{ "asset/base/text/item": {} }"#, ITEM_SETTING_ASSET));
+        assert!(!merges("not json", ITEM_SETTING_ASSET));
+    }
+
+    #[test]
+    fn totals_follow_every_way_up() {
+        let mut entries = PathEntries::new();
+        let mut absorb = |document: &str| {
+            each_setting_item(document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            })
+        };
+        // The client's copy: the game's own items, at the game's prices.
+        absorb(
+            r#"{ "iron_blade": { "key": "ironsword", "price": 500,
+                   "next_tier": ["soldiers_longsword"] },
+                 "soldiers_longsword": { "key": "soldiers_longsword", "price": 500,
+                   "next_tier": ["ruinous_blade"] },
+                 "ruinous_blade": { "key": "ruinous_blade", "price": 800, "next_tier": [] },
+                 "vital_orb": { "key": "vital_orb", "price": 500,
+                   "next_tier": ["hardened_heart"] },
+                 "hardened_heart": { "key": "hardened_heart", "price": 500, "next_tier": [] },
+                 "mod_items": [] }"#,
+        );
+        // The server's: a mod's items too, and the game's items' `next_tier`
+        // with the mod's components the game has added to them.
+        absorb(
+            r#"{ "soldiers_longsword": { "key": "soldiers_longsword", "price": 500,
+                   "next_tier": ["ruinous_blade", "serrated_dirk"] },
+                 "ruinous_blade": { "key": "ruinous_blade", "price": 800,
+                   "next_tier": ["phage"] },
+                 "hardened_heart": { "key": "hardened_heart", "price": 500,
+                   "next_tier": ["phage"] },
+                 "mod_items": [
+                   { "key": "serrated_dirk", "price": 400, "next_tier": ["bastionbreaker"] },
+                   { "key": "bastionbreaker", "price": 650, "next_tier": [] },
+                   { "key": "phage", "price": 500, "next_tier": [] },
+                   { "key": "orphan", "price": 100, "next_tier": ["not_installed"] } ] }"#,
+        );
+        // A mod's merge last: its prices win, and its own `next_tier`, which
+        // knows nothing of the mod's components, cannot take the links away.
+        absorb(
+            "\u{feff}{ \"iron_blade\": { \"key\": \"ironsword\", \"price\": 250 }, \
+             \"soldiers_longsword\": { \"price\": 250, \"next_tier\": [\"ruinous_blade\"] }, \
+             \"ruinous_blade\": { \"price\": 400 }, \
+             \"vital_orb\": { \"price\": 250 }, \
+             \"hardened_heart\": { \"price\": 250 } }",
+        );
+        let paths = link(&entries);
+        let total = |id: &str| total_price(&paths, id, MAX_STEPS);
+
+        assert_eq!(total("ironsword"), Some((250, 250)));
+        assert_eq!(total("ruinous_blade"), Some((900, 900)));
+        // 650 + Serrated Dirk 400 + Long Sword 250 + its Starter 250.
+        assert_eq!(total("bastionbreaker"), Some((1550, 1550)));
+        // From the 500 Heart, or the 900 Blade.
+        assert_eq!(total("phage"), Some((1000, 1400)));
+        assert_eq!(total("orphan"), Some((100, 100)));
+        assert_eq!(total("not_installed"), None);
+
+        assert_eq!(price_text((1550, 1550)), "1550");
+        assert_eq!(price_text((1000, 1400)), "1000 - 1400");
+    }
+
+    #[test]
+    fn screens_are_remembered_by_mount() {
+        assert_eq!(
+            mount_of("main.contents.item_info.data.item_list"),
+            Some("main.contents")
+        );
+        assert_eq!(
+            mount_of("item_info_popup.popup.content.item_info.data.item_list"),
+            Some("item_info_popup.popup.content")
+        );
+        // A screen at the UI root is mounted at the root, whose path is "".
+        assert_eq!(mount_of("item_info.data.item_list"), Some(""));
+        // Not where the exe puts the grid under a screen.
+        assert_eq!(mount_of("shop.item_list"), None);
+        assert_eq!(mount_of("data.item_list"), None);
+        assert_eq!(mount_of("main.metadata.item_list"), None);
+    }
+
+    #[test]
+    fn a_circle_ends() {
+        let mut entries = PathEntries::new();
+        each_setting_item(
+            r#"{ "mod_items": [ { "key": "a", "price": 1, "next_tier": ["b"] },
+                                { "key": "b", "price": 1, "next_tier": ["a"] } ] }"#,
+            |id, entry| absorb_path_entry(&mut entries, id, entry),
+        );
+        assert_eq!(total_price(&link(&entries), "a", MAX_STEPS), Some((8, 8)));
+    }
+
+    #[test]
+    fn items_are_found_by_name() {
+        // As the grid gives them: whatever language its labels are in.
+        let names: ItemNames = [
+            ("Quebra-Bastião".to_string(), "bastionbreaker".to_string()),
+            ("Long Sword".to_string(), "ironsword".to_string()),
+        ]
+        .into();
+        let paths: Paths = [("bastionbreaker".to_string(), (650, Vec::new()))].into();
+        let named = |label: &str| item_named(&paths, &names, label);
+
+        assert_eq!(named("Quebra-Bastião "), Some("bastionbreaker"));
+        assert_eq!(named("Long Sword"), Some("ironsword"));
+        assert_eq!(
+            named("#asset/base/text/item?bastionbreaker.name"),
+            Some("bastionbreaker")
+        );
+        assert_eq!(named("#asset/base/text/item?unknown.name"), None);
+        assert_eq!(named("Price"), None);
     }
 
     #[test]
