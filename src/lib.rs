@@ -92,10 +92,32 @@
 //!
 //! Items resolved by no source are left lit rather than grayed, so an unknown
 //! item is never wrongly dimmed.
+//!
+//! # The total price
+//!
+//! The card's price is one upgrade step's: Bastionbreaker's 650 is what turns
+//! a Serrated Dirk into it, not what it costs from nothing. [`show_total`]
+//! replaces it with the whole way up - the item's price plus the cheapest and
+//! the dearest way to the item it is built from, as one number or a range.
+//! An item's `previous_tier` items are alternatives, any one of them, which is
+//! how the Riot pack sums what a held item has cost in a match.
+//!
+//! The paths come from the same places as the stats - the game's item
+//! document for its own thirty, and mods' merges over it last - plus
+//! `item_recipes.json`, which a code mod writes as its items register (the
+//! Riot pack does). Nothing else reaches those items' paths, and the links
+//! from the game's items to the Riot pack's components are only written on
+//! the components' side, as `previous_tier`.
+//!
+//! The exe says which item the card shows only by its name, so the item is
+//! found by name: in English from the game's own text, and in every language
+//! a mod's `text/item.i18n` gives. An item it cannot name, or price, keeps
+//! the exe's own number.
 
 use mod_api_stable::*;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -125,6 +147,23 @@ const MOD_ITEM_CONFIG: &str = "config-default.json";
 const MOD_ITEM_SETTING: &str = "setting/item_setting.item_setting";
 const MOD_OVERRIDE_INFO: &str = "mod.override_info";
 const ITEM_SETTING_ASSET: &str = "asset/base/setting/item_setting";
+/// Convention filename for a code mod that writes its items' prices and build
+/// paths out as data: `{ "<id>": { "price", "previous_tier", "next_tier" } }`.
+const MOD_ITEM_PATHS: &str = "item_recipes.json";
+/// A mod's merge over the game's item text, and the asset that wires it in.
+const MOD_ITEM_TEXT: &str = "text/item.i18n";
+const ITEM_TEXT_ASSET: &str = "asset/base/text/item";
+/// How a label refers to an item's name for the game to resolve.
+const ITEM_NAME_PREFIX: &str = "#asset/base/text/item?";
+const ITEM_NAME_SUFFIX: &str = ".name";
+
+/// The card's name and price labels, under the screen's `data` node - the exe
+/// writes `data.item_detail.name` and `data.item_detail.price_area.price`.
+const DETAIL_NAME: &str = "item_detail.name";
+const DETAIL_PRICE: &str = "item_detail.price_area.price";
+/// Upgrade steps a path is followed for at most: more than there are tiers,
+/// and what ends a path that runs in a circle.
+const MAX_STEPS: usize = 8;
 
 /// The item pack whose classes the class menu lists: its folder name under
 /// `mods/` when installed by hand, and its Workshop published file id when
@@ -315,25 +354,15 @@ fn setting_id<'a>(map_key: &'a str, entry: &'a serde_json::Value) -> &'a str {
         .unwrap_or(map_key)
 }
 
-/// The game's item document: `{ "<id>": { "key": "<id>", "stat": { ... } },
-/// "mod_items": [...] }`.
-fn absorb_item_setting(document: &str, items: &mut ItemStats) {
+/// Every item in the game's item document - `{ "<id>": { "key": "<id>",
+/// "stat": { ... } }, "mod_items": [...] }` - or in a mod's merge over it,
+/// which has the same shape with fewer items and fields, by the id it is
+/// filed under.
+fn each_setting_item(document: &str, mut visit: impl FnMut(&str, &serde_json::Value)) {
+    let document = document.trim_start_matches('\u{feff}');
     let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
     else {
         return;
-    };
-
-    let granted = |entry: &serde_json::Value| -> Vec<String> {
-        entry
-            .get("stat")
-            .and_then(|stat| stat.as_object())
-            .map(|stat| {
-                stat.iter()
-                    .filter(|(_, value)| nonzero(value))
-                    .map(|(key, _)| key.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
     };
 
     for (id, entry) in &root {
@@ -345,13 +374,30 @@ fn absorb_item_setting(document: &str, items: &mut ItemStats) {
                     .iter()
                     .find_map(|field| entry.get(field).and_then(|value| value.as_str()));
                 if let Some(id) = id {
-                    record(items, id, granted(entry).into_iter());
+                    visit(id, entry);
                 }
             }
         } else {
-            record(items, setting_id(id, entry), granted(entry).into_iter());
+            visit(setting_id(id, entry), entry);
         }
     }
+}
+
+/// The game's item document.
+fn absorb_item_setting(document: &str, items: &mut ItemStats) {
+    each_setting_item(document, |id, entry| {
+        let granted: Vec<String> = entry
+            .get("stat")
+            .and_then(|stat| stat.as_object())
+            .map(|stat| {
+                stat.iter()
+                    .filter(|(_, value)| nonzero(value))
+                    .map(|(key, _)| key.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        record(items, id, granted.into_iter());
+    });
 }
 
 /// A code mod's shipped stat table: `{ "<id>": { "attack": 65, ... } }` - flat,
@@ -385,35 +431,29 @@ fn absorb_mod_config(document: &str, items: &mut ItemStats) {
 /// Health off the Null-Magic Mantle (`mystic_cloak`) as well as giving its
 /// Phantom Dancer (`thunderclaw`) movement speed.
 fn absorb_setting_merge(document: &str, items: &mut ItemStats) {
-    let document = document.trim_start_matches('\u{feff}');
-    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
-    else {
-        return;
-    };
-
-    for (id, entry) in &root {
+    each_setting_item(document, |id, entry| {
         let Some(stat) = entry.get("stat").and_then(|stat| stat.as_object()) else {
-            continue;
+            return;
         };
-        let granted = items.entry(setting_id(id, entry).to_string()).or_default();
+        let granted = items.entry(id.to_string()).or_default();
         for (key, value) in stat {
             granted.retain(|had| had != key);
             if nonzero(value) {
                 granted.push(key.clone());
             }
         }
-    }
+    });
 }
 
-/// Whether a mod's `mod.override_info` merges its item settings over the game's.
-/// Only then does the game apply them - and only then do we, which keeps a
-/// settings file that is merely lying in a folder (an unpacked copy of the base
-/// game's, say) from being read as a mod's.
-fn merges_item_setting(override_info: &str) -> bool {
+/// Whether a mod's `mod.override_info` merges one of its files over the game's
+/// `asset`. Only then does the game apply it - and only then do we, which keeps
+/// a settings file that is merely lying in a folder (an unpacked copy of the
+/// base game's, say) from being read as a mod's.
+fn merges(override_info: &str, asset: &str) -> bool {
     serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
         override_info.trim_start_matches('\u{feff}'),
     )
-    .is_ok_and(|root| root.contains_key(ITEM_SETTING_ASSET))
+    .is_ok_and(|root| root.contains_key(asset))
 }
 
 /// Where subscribed Workshop items live: beside the game install rather than
@@ -472,28 +512,68 @@ fn load_class_file() -> ClassTable {
         .map_or_else(ClassTable::new, |text| parse_class_file(&text))
 }
 
-fn absorb_mod_files(items: &mut ItemStats) {
-    let dirs: Vec<PathBuf> = mod_roots()
+/// Every mod's folder, in [`mod_roots`].
+fn mod_dirs() -> Vec<PathBuf> {
+    mod_roots()
         .into_iter()
         .filter_map(|root| std::fs::read_dir(root).ok())
         .flat_map(|entries| entries.flatten().map(|entry| entry.path()))
-        .collect();
+        .collect()
+}
 
-    for dir in &dirs {
+/// A mod's `file`, if its `mod.override_info` merges it over the game's `asset`.
+fn merged_file(dir: &Path, asset: &str, file: &str) -> Option<String> {
+    let override_info = std::fs::read_to_string(dir.join(MOD_OVERRIDE_INFO)).ok()?;
+    if !merges(&override_info, asset) {
+        return None;
+    }
+    std::fs::read_to_string(dir.join(file)).ok()
+}
+
+fn absorb_mod_files(dirs: &[PathBuf], items: &mut ItemStats) {
+    for dir in dirs {
         if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_CONFIG)) {
             absorb_mod_config(&text, items);
         }
     }
     // Merges go last: they are what the game actually applies to the items
     // they name, so they get the final word on those items' stats.
-    for dir in &dirs {
-        let merged = std::fs::read_to_string(dir.join(MOD_OVERRIDE_INFO))
-            .is_ok_and(|text| merges_item_setting(&text));
-        if !merged {
-            continue;
-        }
-        if let Ok(text) = std::fs::read_to_string(dir.join(MOD_ITEM_SETTING)) {
+    for dir in dirs {
+        if let Some(text) = merged_file(dir, ITEM_SETTING_ASSET, MOD_ITEM_SETTING) {
             absorb_setting_merge(&text, items);
+        }
+    }
+}
+
+/// Prices and build paths from mods: their merges over the game's item
+/// document, then the paths code mods write out. A mod installed both by hand
+/// and from the Workshop can have written two, so those are read oldest first
+/// and the copy that wrote last has the final word.
+fn absorb_mod_paths(dirs: &[PathBuf], entries: &mut PathEntries) {
+    for dir in dirs {
+        if let Some(text) = merged_file(dir, ITEM_SETTING_ASSET, MOD_ITEM_SETTING) {
+            each_setting_item(&text, |id, entry| absorb_path_entry(entries, id, entry));
+        }
+    }
+    let mut written: Vec<(SystemTime, String)> = dirs
+        .iter()
+        .filter_map(|dir| {
+            let file = dir.join(MOD_ITEM_PATHS);
+            let modified = std::fs::metadata(&file).and_then(|meta| meta.modified()).ok()?;
+            Some((modified, std::fs::read_to_string(&file).ok()?))
+        })
+        .collect();
+    written.sort_by_key(|(modified, _)| *modified);
+    for (_, text) in &written {
+        absorb_path_file(text, entries);
+    }
+}
+
+/// Item names from mods' item text, in every language it gives.
+fn absorb_mod_names(dirs: &[PathBuf], names: &mut ItemNames) {
+    for dir in dirs {
+        if let Some(text) = merged_file(dir, ITEM_TEXT_ASSET, MOD_ITEM_TEXT) {
+            absorb_item_names(&text, names);
         }
     }
 }
@@ -838,6 +918,210 @@ fn regroup_boots(ctx: &mut StableClient<'_>, contents: &str) -> bool {
     true
 }
 
+// --- the total price ------------------------------------------------------
+
+/// What is known of one item's place in the build paths. A source may give
+/// any of the fields, and each one it gives replaces what was read before.
+#[derive(Default)]
+struct PathEntry {
+    price: Option<u32>,
+    previous: Vec<String>,
+    next: Vec<String>,
+}
+
+type PathEntries = BTreeMap<String, PathEntry>;
+
+/// item id -> its own price and the items it can be built from, any one of
+/// them. Made by [`link`].
+type Paths = BTreeMap<String, (u32, Vec<String>)>;
+
+/// An item's name, in any language read -> its id.
+type ItemNames = BTreeMap<String, String>;
+
+/// One item's `price`, `previous_tier` and `next_tier`, from any source that
+/// gives them: the game's item document, a mod's merge over it, or a code
+/// mod's [`MOD_ITEM_PATHS`].
+fn absorb_path_entry(entries: &mut PathEntries, id: &str, entry: &serde_json::Value) {
+    let ids = |field: &str| {
+        entry.get(field).and_then(|value| value.as_array()).map(|list| {
+            list.iter()
+                .filter_map(|id| id.as_str())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+    };
+    let known = entries.entry(id.to_string()).or_default();
+    if let Some(price) = entry.get("price").and_then(|price| price.as_f64()) {
+        known.price = Some(price.max(0.0).round() as u32);
+    }
+    if let Some(previous) = ids("previous_tier") {
+        known.previous = previous;
+    }
+    if let Some(next) = ids("next_tier") {
+        known.next = next;
+    }
+}
+
+/// A code mod's [`MOD_ITEM_PATHS`]: `{ "<id>": { "price": 650,
+/// "previous_tier": [...], "next_tier": [...] } }`.
+fn absorb_path_file(document: &str, entries: &mut PathEntries) {
+    let document = document.trim_start_matches('\u{feff}');
+    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
+    else {
+        return;
+    };
+    for (id, entry) in &root {
+        absorb_path_entry(entries, id, entry);
+    }
+}
+
+/// Joins every link at both ends. The game's items name only what they are
+/// upgraded into, and a mod's component built from one of them names only
+/// what it is built from, so an item's sources are its own `previous_tier`
+/// plus every item whose `next_tier` names it. A link to an item with no price,
+/// such as one from a mod that is not installed, leads nowhere and is dropped.
+fn link(entries: &PathEntries) -> Paths {
+    let mut paths: Paths = entries
+        .iter()
+        .filter_map(|(id, entry)| Some((id.clone(), (entry.price?, Vec::new()))))
+        .collect();
+    let links = entries.iter().flat_map(|(id, entry)| {
+        let from = entry.previous.iter().map(move |previous| (previous, id));
+        let into = entry.next.iter().map(move |next| (id, next));
+        from.chain(into)
+    });
+    for (from, into) in links {
+        if !paths.contains_key(from) {
+            continue;
+        }
+        if let Some((_, sources)) = paths.get_mut(into) {
+            if !sources.contains(from) {
+                sources.push(from.clone());
+            }
+        }
+    }
+    paths
+}
+
+/// The least and the most an item costs from nothing: its own price, plus the
+/// cheapest and the dearest way up to any item it is built from. Followed for
+/// at most `steps` items, which is what ends a path that runs in a circle.
+fn total_price(paths: &Paths, id: &str, steps: usize) -> Option<(u32, u32)> {
+    let (price, sources) = paths.get(id)?;
+    let below = if steps > 1 {
+        sources
+            .iter()
+            .filter_map(|source| total_price(paths, source, steps - 1))
+            .reduce(|(low, high), (other_low, other_high)| {
+                (low.min(other_low), high.max(other_high))
+            })
+    } else {
+        None
+    };
+    let (low, high) = below.unwrap_or((0, 0));
+    Some((price + low, price + high))
+}
+
+/// A total as the card shows it: one number, or a range when the ways up cost
+/// different amounts.
+fn price_text((low, high): (u32, u32)) -> String {
+    if low == high {
+        low.to_string()
+    } else {
+        format!("{low} - {high}")
+    }
+}
+
+/// A mod's item text: `{ "<lang>": { "<id>": { "name": "..." }, ... } }`.
+/// Every language is read, since the card names the item in the player's.
+fn absorb_item_names(document: &str, names: &mut ItemNames) {
+    let document = document.trim_start_matches('\u{feff}');
+    let Ok(root) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(document)
+    else {
+        return;
+    };
+    for language in root.values().filter_map(|language| language.as_object()) {
+        for (id, entry) in language {
+            let Some(name) = entry.get("name").and_then(|name| name.as_str()) else {
+                continue;
+            };
+            let name = name.trim();
+            if !name.is_empty() {
+                names
+                    .entry(name.to_string())
+                    .or_insert_with(|| id.clone());
+            }
+        }
+    }
+}
+
+/// Every priced item's name in the game's own text. `i18n` only ever answers
+/// in English, so the other languages come from mods' item text alone.
+fn absorb_game_names(ctx: &StableClient<'_>, paths: &Paths, names: &mut ItemNames) {
+    for id in paths.keys() {
+        let name = ctx.i18n(&format!("{ITEM_NAME_PREFIX}{id}{ITEM_NAME_SUFFIX}"));
+        let Some(name) = name.filter(|name| !name.trim().is_empty() && !name.starts_with('#'))
+        else {
+            continue;
+        };
+        names
+            .entry(name.trim().to_string())
+            .or_insert_with(|| id.clone());
+    }
+}
+
+/// The item a name label shows: by the reference it was handed for the game
+/// to resolve, or by the name that reference resolved to.
+fn item_named<'a>(paths: &'a Paths, names: &'a ItemNames, label: &str) -> Option<&'a str> {
+    let reference = label
+        .strip_prefix(ITEM_NAME_PREFIX)
+        .and_then(|path| path.strip_suffix(ITEM_NAME_SUFFIX));
+    match reference {
+        Some(id) => paths.get_key_value(id).map(|(id, _)| id.as_str()),
+        None => names.get(label.trim()).map(String::as_str),
+    }
+}
+
+/// What the card's price label was last set to, and for which item.
+struct PriceShown {
+    /// The name label at the time.
+    name: String,
+    /// The exe's own price text for that item.
+    game: String,
+    /// What the label was set to.
+    shown: String,
+}
+
+/// Puts the total price on the card in place of the step price the exe
+/// writes, whenever the label stops saying what was last put there - which
+/// covers the exe filling it once per item or every frame. An item that
+/// cannot be named or priced keeps the exe's text.
+fn show_total(state: &mut State, ctx: &mut StableClient<'_>, host: &str) {
+    let label = join(host, DETAIL_PRICE);
+    let Some(text) = ctx.ui_text(&label) else {
+        return;
+    };
+    let name = ctx.ui_text(&join(host, DETAIL_NAME)).unwrap_or_default();
+    let game = match &state.price {
+        Some(last) if last.shown == text => {
+            if last.name == name {
+                return;
+            }
+            // The card moved on to another item but the exe left the label
+            // as it was, so that item's price is the one the exe last wrote.
+            last.game.clone()
+        }
+        _ => text.clone(),
+    };
+    let shown = item_named(&state.paths, &state.names, &name)
+        .and_then(|id| total_price(&state.paths, id, MAX_STEPS))
+        .map_or_else(|| game.clone(), price_text);
+    if shown != text {
+        ctx.ui_set_text(&label, &shown);
+    }
+    state.price = Some(PriceShown { name, game, shown });
+}
+
 // --- extension ------------------------------------------------------------
 
 #[derive(Default)]
@@ -863,6 +1147,11 @@ struct State {
     placed: Option<i32>,
     /// Whether [`regroup_boots`] has rebuilt the current grid's Boots section.
     regrouped: bool,
+    /// Every item's price and what it is built from, for [`show_total`].
+    paths: Paths,
+    names: ItemNames,
+    /// What [`show_total`] last put on the card.
+    price: Option<PriceShown>,
 }
 
 struct ItemFilter {
@@ -870,6 +1159,25 @@ struct ItemFilter {
 }
 
 impl ItemFilter {
+    /// Reads every source of item stats, classes, prices and names. None of
+    /// them can change while the game runs, so this happens once.
+    fn load(state: &mut State, ctx: &StableClient<'_>) {
+        let mut entries = PathEntries::new();
+        if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
+            absorb_item_setting(&document, &mut state.items);
+            each_setting_item(&document, |id, entry| {
+                absorb_path_entry(&mut entries, id, entry)
+            });
+        }
+        let dirs = mod_dirs();
+        absorb_mod_files(&dirs, &mut state.items);
+        absorb_mod_paths(&dirs, &mut entries);
+        state.paths = link(&entries);
+        absorb_game_names(ctx, &state.paths, &mut state.names);
+        absorb_mod_names(&dirs, &mut state.names);
+        state.classes = load_class_file();
+    }
+
     /// Spawns the control and wires click handlers to the atomics.
     fn build(state: &mut State, ctx: &mut StableClient<'_>, host: &str) {
         if !ctx.ui_spawn_source(host, &control_source()) {
@@ -1005,6 +1313,7 @@ impl StableExtension for ItemFilter {
             state.applied = None;
             state.placed = None;
             state.regrouped = false;
+            state.price = None;
         }
 
         if state.list.is_none() {
@@ -1029,15 +1338,9 @@ impl StableExtension for ItemFilter {
         }
         let host = parent_of(&list).to_string();
 
-        // None of these sources can change while the game runs, so read them
-        // once.
         if !state.loaded {
             state.loaded = true;
-            if let Some(document) = ctx.setting_get_json(SettingTargetV1::ItemSetting, "") {
-                absorb_item_setting(&document, &mut state.items);
-            }
-            absorb_mod_files(&mut state.items);
-            state.classes = load_class_file();
+            Self::load(&mut state, ctx);
         }
 
         if !state.built {
@@ -1094,6 +1397,8 @@ impl StableExtension for ItemFilter {
             apply(&state.items, &state.classes, ctx, &contents, keys, class);
             state.applied = Some((state.current, count));
         }
+
+        show_total(&mut state, ctx, &host);
     }
 }
 
@@ -1196,11 +1501,97 @@ mod tests {
 
     #[test]
     fn only_wired_merges_count() {
-        assert!(merges_item_setting(
-            r#"{ "asset/base/setting/item_setting": { "type": "merge" } }"#
+        assert!(merges(
+            r#"{ "asset/base/setting/item_setting": { "type": "merge" } }"#,
+            ITEM_SETTING_ASSET
         ));
-        assert!(!merges_item_setting(r#"{ "asset/base/text/item": {} }"#));
-        assert!(!merges_item_setting("not json"));
+        assert!(!merges(r#"{ "asset/base/text/item": {} }"#, ITEM_SETTING_ASSET));
+        assert!(merges(r#"{ "asset/base/text/item": {} }"#, ITEM_TEXT_ASSET));
+        assert!(!merges("not json", ITEM_SETTING_ASSET));
+    }
+
+    #[test]
+    fn totals_follow_every_way_up() {
+        let mut entries = PathEntries::new();
+        // The game's own items, linked by `next_tier` only.
+        each_setting_item(
+            r#"{ "iron_blade": { "key": "ironsword", "price": 500,
+                   "next_tier": ["soldiers_longsword"] },
+                 "soldiers_longsword": { "key": "soldiers_longsword", "price": 500,
+                   "next_tier": ["ruinous_blade"] },
+                 "ruinous_blade": { "key": "ruinous_blade", "price": 800, "next_tier": [] },
+                 "vital_orb": { "key": "vital_orb", "price": 500,
+                   "next_tier": ["hardened_heart"] },
+                 "hardened_heart": { "key": "hardened_heart", "price": 500, "next_tier": [] } }"#,
+            |id, entry| absorb_path_entry(&mut entries, id, entry),
+        );
+        // A mod's merge over them: prices only, so the links stay.
+        each_setting_item(
+            r#"{ "iron_blade": { "key": "ironsword", "price": 250 },
+                 "soldiers_longsword": { "price": 250 },
+                 "ruinous_blade": { "price": 400 },
+                 "vital_orb": { "price": 250 },
+                 "hardened_heart": { "price": 250 } }"#,
+            |id, entry| absorb_path_entry(&mut entries, id, entry),
+        );
+        // A code mod's items, linked to the game's by `previous_tier` only.
+        absorb_path_file(
+            "\u{feff}{ \"serrated_dirk\": { \"price\": 400, \
+               \"previous_tier\": [\"soldiers_longsword\"], \"next_tier\": [\"bastionbreaker\"] }, \
+             \"bastionbreaker\": { \"price\": 650, \"previous_tier\": [\"serrated_dirk\"], \
+               \"next_tier\": [] }, \
+             \"phage\": { \"price\": 500, \
+               \"previous_tier\": [\"hardened_heart\", \"ruinous_blade\"], \"next_tier\": [] }, \
+             \"orphan\": { \"price\": 100, \"previous_tier\": [\"not_installed\"] } }",
+            &mut entries,
+        );
+        let paths = link(&entries);
+        let total = |id: &str| total_price(&paths, id, MAX_STEPS);
+
+        assert_eq!(total("ironsword"), Some((250, 250)));
+        assert_eq!(total("ruinous_blade"), Some((900, 900)));
+        // 650 + Serrated Dirk 400 + Long Sword 250 + its Starter 250.
+        assert_eq!(total("bastionbreaker"), Some((1550, 1550)));
+        // From the 500 Heart, or the 900 Blade.
+        assert_eq!(total("phage"), Some((1000, 1400)));
+        assert_eq!(total("orphan"), Some((100, 100)));
+        assert_eq!(total("not_installed"), None);
+
+        assert_eq!(price_text((1550, 1550)), "1550");
+        assert_eq!(price_text((1000, 1400)), "1000 - 1400");
+    }
+
+    #[test]
+    fn a_circle_ends() {
+        let mut entries = PathEntries::new();
+        absorb_path_file(
+            r#"{ "a": { "price": 1, "previous_tier": ["b"] },
+                 "b": { "price": 1, "previous_tier": ["a"] } }"#,
+            &mut entries,
+        );
+        assert_eq!(total_price(&link(&entries), "a", MAX_STEPS), Some((8, 8)));
+    }
+
+    #[test]
+    fn items_are_found_by_name() {
+        let mut names = ItemNames::new();
+        absorb_item_names(
+            "\u{feff}{ \"en\": { \"info\": { \"price\": \"Price\" }, \"tier\": \"Tier {Tier}\", \
+               \"bastionbreaker\": { \"name\": \"Bastionbreaker \" } }, \
+             \"pt-BR\": { \"bastionbreaker\": { \"name\": \"Quebra-Bastião\" } } }",
+            &mut names,
+        );
+        let paths: Paths = [("bastionbreaker".to_string(), (650, Vec::new()))].into();
+        let named = |label: &str| item_named(&paths, &names, label);
+
+        assert_eq!(named("Bastionbreaker"), Some("bastionbreaker"));
+        assert_eq!(named("Quebra-Bastião"), Some("bastionbreaker"));
+        assert_eq!(
+            named("#asset/base/text/item?bastionbreaker.name"),
+            Some("bastionbreaker")
+        );
+        assert_eq!(named("#asset/base/text/item?unknown.name"), None);
+        assert_eq!(named("Price"), None);
     }
 
     #[test]
